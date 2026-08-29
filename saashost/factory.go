@@ -5,6 +5,7 @@ import (
 	"time"
 
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
+	"github.com/domainry/domainry-scheduler-sdk/modulehost"
 )
 
 // Transport is implemented by an authenticated SaaS protocol client. Private
@@ -12,7 +13,7 @@ import (
 // routing decision is carried by TargetRef.DispatchMode.
 type Transport interface {
 	Descriptor(context.Context, schedulersdk.ApplicationRef) (schedulersdk.Descriptor, error)
-	Reconcile(context.Context, schedulersdk.ApplicationRef) error
+	Reconcile(context.Context, schedulersdk.ApplicationRef, schedulersdk.DefinitionSnapshot) error
 	Preview(context.Context, schedulersdk.ApplicationRef, schedulersdk.Schedule, time.Time, int) ([]time.Time, error)
 	Tick(context.Context, schedulersdk.ApplicationRef, time.Time, int) (int, error)
 	TriggerNow(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.Run, error)
@@ -21,5 +22,5 @@ type Transport interface {
 }
 
 type Factory interface {
-	OpenSaaS(context.Context, schedulersdk.ApplicationRef, Transport) (schedulersdk.Binding, error)
+	OpenSaaS(context.Context, schedulersdk.ApplicationRef, modulehost.Host) (schedulersdk.Binding, error)
 }
