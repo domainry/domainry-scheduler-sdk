@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,10 @@ type Config struct {
 	Endpoint string
 	Token    string
 	Client   Client
+}
+
+func ConfigFromEnvironment() Config {
+	return Config{Endpoint: strings.TrimSpace(os.Getenv("SCHEDULER_SAAS_ENDPOINT")), Token: strings.TrimSpace(os.Getenv("SCHEDULER_SAAS_TOKEN"))}
 }
 
 type Transport struct {
