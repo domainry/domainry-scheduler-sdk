@@ -17,7 +17,14 @@ type Transport interface {
 	Preview(context.Context, schedulersdk.ApplicationRef, schedulersdk.Schedule, time.Time, int) ([]time.Time, error)
 	Tick(context.Context, schedulersdk.ApplicationRef, time.Time, int) (int, error)
 	TriggerNow(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.Run, error)
+	Reschedule(context.Context, schedulersdk.ApplicationRef, string, time.Time, string) error
 	Runs(context.Context, schedulersdk.ApplicationRef, int) ([]schedulersdk.Run, error)
+	Run(context.Context, schedulersdk.ApplicationRef, string) (schedulersdk.Run, error)
+	RetryRun(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.Run, error)
+	CancelRun(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.Run, error)
+	DeadLetter(context.Context, schedulersdk.ApplicationRef, string) (schedulersdk.DeadLetter, error)
+	ResolveDeadLetter(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.DeadLetter, error)
+	RequeueDeadLetter(context.Context, schedulersdk.ApplicationRef, string, string) (schedulersdk.Run, error)
 	Close(context.Context, schedulersdk.ApplicationRef) error
 }
 

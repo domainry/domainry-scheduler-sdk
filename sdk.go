@@ -174,6 +174,17 @@ type Run struct {
 	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
+// DeadLetter is Scheduler-owned terminal failure state. RunEvent remains
+// immutable execution evidence and is deliberately not an operations queue.
+type DeadLetter struct {
+	RunID         string    `json:"run_id"`
+	DefinitionKey string    `json:"definition_key"`
+	Status        string    `json:"status"`
+	Reason        string    `json:"reason"`
+	FailedAt      time.Time `json:"failed_at"`
+	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
+}
+
 type WorkerConfig struct {
 	Enabled      bool          `json:"enabled"`
 	PollInterval time.Duration `json:"poll_interval"`
@@ -210,7 +221,14 @@ type Binding interface {
 	Preview(context.Context, Schedule, time.Time, int) ([]time.Time, error)
 	Tick(context.Context, time.Time, int) (int, error)
 	TriggerNow(context.Context, string, string) (Run, error)
+	Reschedule(context.Context, string, time.Time, string) error
 	Runs(context.Context, int) ([]Run, error)
+	Run(context.Context, string) (Run, error)
+	RetryRun(context.Context, string, string) (Run, error)
+	CancelRun(context.Context, string, string) (Run, error)
+	DeadLetter(context.Context, string) (DeadLetter, error)
+	ResolveDeadLetter(context.Context, string, string) (DeadLetter, error)
+	RequeueDeadLetter(context.Context, string, string) (Run, error)
 	Start(context.Context, WorkerConfig) <-chan struct{}
 	Close(context.Context) error
 }

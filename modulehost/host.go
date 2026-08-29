@@ -75,6 +75,13 @@ type RunStore interface {
 	Accept(context.Context, schedulersdk.Run, schedulersdk.DownstreamReceipt) error
 	Fail(context.Context, schedulersdk.Run, error, time.Time) error
 	List(context.Context, int) ([]schedulersdk.Run, error)
+	Get(context.Context, string) (schedulersdk.Run, error)
+	Retry(context.Context, string, string) (schedulersdk.Run, error)
+	Cancel(context.Context, string, string) (schedulersdk.Run, error)
+	DeadLetter(context.Context, string) (schedulersdk.DeadLetter, error)
+	ResolveDeadLetter(context.Context, string, string) (schedulersdk.DeadLetter, error)
+	RequeueDeadLetter(context.Context, string, string) (schedulersdk.Run, error)
+	Reschedule(context.Context, string, time.Time, string) error
 }
 
 type Dispatcher interface {

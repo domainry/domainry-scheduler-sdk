@@ -77,12 +77,45 @@ func (t *Transport) TriggerNow(ctx context.Context, app schedulersdk.Application
 	err := t.request(ctx, http.MethodPost, t.path(app, "triggers"), map[string]string{"definition_key": key, "reason": reason}, &out)
 	return out, err
 }
+func (t *Transport) Reschedule(ctx context.Context, app schedulersdk.ApplicationRef, key string, nextRunAt time.Time, reason string) error {
+	return t.request(ctx, http.MethodPost, t.path(app, "definitions")+"/"+url.PathEscape(key)+"/reschedule", map[string]any{"next_run_at": nextRunAt, "reason": reason}, nil)
+}
 func (t *Transport) Runs(ctx context.Context, app schedulersdk.ApplicationRef, limit int) ([]schedulersdk.Run, error) {
 	var out struct {
 		Items []schedulersdk.Run `json:"items"`
 	}
 	err := t.request(ctx, http.MethodGet, t.path(app, "runs")+"?limit="+strconv.Itoa(limit), nil, &out)
 	return out.Items, err
+}
+func (t *Transport) Run(ctx context.Context, app schedulersdk.ApplicationRef, id string) (schedulersdk.Run, error) {
+	var out schedulersdk.Run
+	err := t.request(ctx, http.MethodGet, t.path(app, "runs")+"/"+url.PathEscape(id), nil, &out)
+	return out, err
+}
+func (t *Transport) RetryRun(ctx context.Context, app schedulersdk.ApplicationRef, id, reason string) (schedulersdk.Run, error) {
+	var out schedulersdk.Run
+	err := t.request(ctx, http.MethodPost, t.path(app, "runs")+"/"+url.PathEscape(id)+"/retry", map[string]string{"reason": reason}, &out)
+	return out, err
+}
+func (t *Transport) CancelRun(ctx context.Context, app schedulersdk.ApplicationRef, id, reason string) (schedulersdk.Run, error) {
+	var out schedulersdk.Run
+	err := t.request(ctx, http.MethodPost, t.path(app, "runs")+"/"+url.PathEscape(id)+"/cancel", map[string]string{"reason": reason}, &out)
+	return out, err
+}
+func (t *Transport) DeadLetter(ctx context.Context, app schedulersdk.ApplicationRef, id string) (schedulersdk.DeadLetter, error) {
+	var out schedulersdk.DeadLetter
+	err := t.request(ctx, http.MethodGet, t.path(app, "dead-letters")+"/"+url.PathEscape(id), nil, &out)
+	return out, err
+}
+func (t *Transport) ResolveDeadLetter(ctx context.Context, app schedulersdk.ApplicationRef, id, reason string) (schedulersdk.DeadLetter, error) {
+	var out schedulersdk.DeadLetter
+	err := t.request(ctx, http.MethodPost, t.path(app, "dead-letters")+"/"+url.PathEscape(id)+"/resolve", map[string]string{"reason": reason}, &out)
+	return out, err
+}
+func (t *Transport) RequeueDeadLetter(ctx context.Context, app schedulersdk.ApplicationRef, id, reason string) (schedulersdk.Run, error) {
+	var out schedulersdk.Run
+	err := t.request(ctx, http.MethodPost, t.path(app, "dead-letters")+"/"+url.PathEscape(id)+"/requeue", map[string]string{"reason": reason}, &out)
+	return out, err
 }
 func (t *Transport) Close(ctx context.Context, app schedulersdk.ApplicationRef) error {
 	return t.request(ctx, http.MethodDelete, t.path(app, "binding"), nil, nil)
