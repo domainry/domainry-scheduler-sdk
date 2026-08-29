@@ -7,61 +7,58 @@ import (
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
-// Host is the narrow capability set borrowed by an in-process Scheduler.
-// Implementations adapt Runtime-owned metadata, mutation-kernel, target and
-// audit capabilities; they do not give Scheduler raw database access.
+// Host exposes only configuration, durable Scheduler state and downstream
+// dispatch. Scheduler never receives Runtime stores or owner services.
 type Host interface {
-	Definitions() DefinitionSource
-	State() StateStore
-	Targets() TargetRuntime
-	Audit() AuditAppender
+	Definitions() DefinitionProvider
+	Runs() RunStore
+	Dispatcher() Dispatcher
+	HTTPConnections() HTTPConnectionProvider
 }
 
-type DefinitionSource interface {
-	List(context.Context, schedulersdk.Principal) ([]schedulersdk.Record, error)
-	Get(context.Context, string, schedulersdk.Principal) (schedulersdk.Record, bool, error)
-	Versions(context.Context, string, schedulersdk.Principal) ([]schedulersdk.DefinitionVersion, error)
+type DefinitionProvider interface {
+	Snapshot(context.Context) (schedulersdk.DefinitionSnapshot, error)
 }
 
-// StateStore keeps Scheduler's operational records behind owner-scoped,
-// workspace-aware mutations. Conditional mutations carry fencing evidence.
-type StateStore interface {
-	Get(context.Context, string, string, schedulersdk.Principal) (schedulersdk.Record, bool, error)
-	List(context.Context, string, schedulersdk.Payload, schedulersdk.Principal) ([]schedulersdk.Record, error)
-	Commit(context.Context, []Mutation, schedulersdk.Principal) error
-	ConditionalUpdate(context.Context, Mutation, Condition, schedulersdk.Principal) (bool, error)
+type DueTrigger struct {
+	Definition   schedulersdk.Definition
+	ScheduledFor time.Time
 }
 
-type Mutation struct {
-	Operation string              `json:"operation"`
-	Object    string              `json:"object"`
-	Record    schedulersdk.Record `json:"record"`
+// RunStore owns cursor, unique-window claim and terminal dispatch evidence.
+// Claim must be atomic on Definition.Key + ScheduledFor.
+type RunStore interface {
+	Reconcile(context.Context, schedulersdk.Definition, time.Time) error
+	DisableMissing(context.Context, []string, int64) error
+	Due(context.Context, time.Time, int) ([]DueTrigger, error)
+	Claim(context.Context, DueTrigger, time.Duration) (schedulersdk.Run, bool, error)
+	Accept(context.Context, schedulersdk.Run, schedulersdk.DownstreamReceipt) error
+	Fail(context.Context, schedulersdk.Run, error, time.Time) error
+	List(context.Context, int) ([]schedulersdk.Run, error)
 }
 
-type Condition struct {
-	Fields schedulersdk.Payload `json:"fields"`
+type Dispatcher interface {
+	Dispatch(context.Context, schedulersdk.Trigger) (schedulersdk.DownstreamReceipt, error)
 }
 
-type TargetRuntime interface {
-	Execute(context.Context, TargetExecution, schedulersdk.Principal) (schedulersdk.Payload, error)
+// HTTPConnectionProvider resolves deployment-owned endpoints and credentials.
+// Scheduler definitions only carry connection and operation keys.
+type HTTPConnectionProvider interface {
+	ResolveHTTPConnection(context.Context, string) (HTTPConnection, error)
 }
 
-type TargetExecution struct {
-	RunID        string               `json:"run_id"`
-	DefinitionID string               `json:"definition_id"`
-	TargetType   string               `json:"target_type"`
-	TargetKey    string               `json:"target_key"`
-	ScheduledFor time.Time            `json:"scheduled_for"`
-	Payload      schedulersdk.Payload `json:"payload"`
-	Idempotency  string               `json:"idempotency_key"`
+type HTTPConnection struct {
+	BaseURL    string
+	ClientID   string
+	Secret     []byte
+	Auth       string
+	Operations map[string]HTTPOperation
 }
 
-type AuditAppender interface {
-	Append(context.Context, AuditEvent, schedulersdk.Principal) error
-}
-
-type AuditEvent struct {
-	Action     string               `json:"action"`
-	ResourceID string               `json:"resource_id"`
-	Data       schedulersdk.Payload `json:"data"`
+type HTTPOperation struct {
+	Path             string
+	Method           string
+	Timeout          time.Duration
+	Headers          map[string]string
+	MaxResponseBytes int64
 }

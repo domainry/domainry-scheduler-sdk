@@ -1,9 +1,11 @@
-// Package schedulersdk defines the deployment-neutral Scheduler owner contract.
-// It deliberately contains no Runtime, database, HTTP, or UI dependencies.
+// Package schedulersdk defines the deployment-neutral Scheduler protocol.
+// Scheduler owns time and durable trigger evidence; downstream owners retain
+// all business execution semantics.
 package schedulersdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -44,52 +46,120 @@ func (d Descriptor) Validate() error {
 	return nil
 }
 
-// Principal is the complete authorization evidence accepted by Scheduler.
-// The host maps its identity model into this value before crossing the owner
-// boundary; Scheduler never imports a host-specific principal implementation.
-type Principal struct {
-	WorkspaceID string   `json:"workspace_id"`
-	ActorID     string   `json:"actor_id"`
-	Permissions []string `json:"permissions"`
-	System      bool     `json:"system"`
-	Reason      string   `json:"reason,omitempty"`
+type Schedule struct {
+	Type            string `json:"type"`
+	Expression      string `json:"expression,omitempty"`
+	Timezone        string `json:"timezone,omitempty"`
+	IntervalSeconds int    `json:"interval_seconds,omitempty"`
 }
 
-type Record struct {
-	ID        string         `json:"id"`
-	Data      map[string]any `json:"data"`
-	CreatedAt string         `json:"created_at,omitempty"`
-	UpdatedAt string         `json:"updated_at,omitempty"`
+type TargetRef struct {
+	Type          string          `json:"type"`
+	Owner         string          `json:"owner"`
+	Operation     string          `json:"operation"`
+	ConnectionKey string          `json:"connection_key,omitempty"`
+	DispatchMode  string          `json:"dispatch_mode,omitempty"`
+	Payload       json.RawMessage `json:"payload,omitempty"`
 }
 
-type DefinitionVersion struct {
-	VersionID string         `json:"version_id"`
-	Event     string         `json:"event"`
-	Data      map[string]any `json:"data"`
-	CreatedAt string         `json:"created_at"`
+type Policy struct {
+	Overlap           string        `json:"overlap,omitempty"`
+	Misfire           string        `json:"misfire,omitempty"`
+	MaxCatchupWindows int           `json:"max_catchup_windows,omitempty"`
+	Timeout           time.Duration `json:"timeout,omitempty"`
+	MaxAttempts       int           `json:"max_attempts,omitempty"`
+	RetryInitial      time.Duration `json:"retry_initial,omitempty"`
+	RetryMax          time.Duration `json:"retry_max,omitempty"`
 }
 
-type DefinitionPreview struct {
-	NextRuns []string `json:"next_runs"`
+type Definition struct {
+	Key      string    `json:"key"`
+	Name     string    `json:"name"`
+	Status   string    `json:"status"`
+	Revision string    `json:"revision"`
+	Schedule Schedule  `json:"schedule"`
+	Target   TargetRef `json:"target"`
+	Policy   Policy    `json:"policy"`
 }
 
-// Payload is used for owner-shaped projections whose fields evolve under the
-// versioned Scheduler protocol without leaking host domain types into the SDK.
-type Payload map[string]any
+func (d Definition) Validate() error {
+	if strings.TrimSpace(d.Key) == "" {
+		return fmt.Errorf("scheduler definition key is required")
+	}
+	if strings.TrimSpace(d.Revision) == "" {
+		return fmt.Errorf("scheduler definition %s revision is required", d.Key)
+	}
+	if strings.TrimSpace(d.Schedule.Type) == "" {
+		return fmt.Errorf("scheduler definition %s schedule type is required", d.Key)
+	}
+	targetType := strings.TrimSpace(d.Target.Type)
+	if targetType == "" {
+		targetType = "runtime_operation"
+	}
+	if strings.TrimSpace(d.Target.Operation) == "" {
+		return fmt.Errorf("scheduler definition %s target operation is required", d.Key)
+	}
+	switch targetType {
+	case "runtime_operation":
+		if strings.TrimSpace(d.Target.Owner) == "" {
+			return fmt.Errorf("scheduler definition %s runtime target owner is required", d.Key)
+		}
+	case "http":
+		if strings.TrimSpace(d.Target.ConnectionKey) == "" {
+			return fmt.Errorf("scheduler definition %s HTTP connection is required", d.Key)
+		}
+	default:
+		return fmt.Errorf("scheduler definition %s target type %q is unsupported", d.Key, targetType)
+	}
+	return nil
+}
 
-type OperationResult struct {
-	Run        Record  `json:"run"`
-	Replay     bool    `json:"replay"`
-	HTTPStatus int     `json:"http_status,omitempty"`
-	Evidence   Payload `json:"evidence,omitempty"`
+// Normalize applies protocol defaults before a definition is retained or dispatched.
+func (d Definition) Normalize() Definition {
+	if strings.TrimSpace(d.Target.Type) == "" {
+		d.Target.Type = "runtime_operation"
+	}
+	return d
+}
+
+type DefinitionSnapshot struct {
+	Revision    int64        `json:"revision"`
+	Definitions []Definition `json:"definitions"`
+}
+
+type Trigger struct {
+	RunID          string          `json:"run_id"`
+	DefinitionKey  string          `json:"definition_key"`
+	DefinitionRev  string          `json:"definition_revision"`
+	ScheduledFor   time.Time       `json:"scheduled_for"`
+	WindowKey      string          `json:"window_key"`
+	Target         TargetRef       `json:"target"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	Attempt        int             `json:"attempt"`
+	Metadata       json.RawMessage `json:"metadata,omitempty"`
+}
+
+type DownstreamReceipt struct {
+	ID     string `json:"id"`
+	Owner  string `json:"owner"`
+	Status string `json:"status"`
+	Replay bool   `json:"replay"`
+}
+
+type Run struct {
+	Trigger           Trigger           `json:"trigger"`
+	Status            string            `json:"status"`
+	DownstreamReceipt DownstreamReceipt `json:"downstream_receipt,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
 type WorkerConfig struct {
-	Enabled           bool          `json:"enabled"`
-	PollInterval      time.Duration `json:"poll_interval"`
-	BatchSize         int           `json:"batch_size"`
-	LeaseTTL          time.Duration `json:"lease_ttl"`
-	MaxCatchupWindows int           `json:"max_catchup_windows"`
+	Enabled      bool          `json:"enabled"`
+	PollInterval time.Duration `json:"poll_interval"`
+	BatchSize    int           `json:"batch_size"`
+	LeaseTTL     time.Duration `json:"lease_ttl"`
 }
 
 func NormalizeWorkerConfig(config WorkerConfig) WorkerConfig {
@@ -105,46 +175,23 @@ func NormalizeWorkerConfig(config WorkerConfig) WorkerConfig {
 	if config.LeaseTTL <= 0 {
 		config.LeaseTTL = 5 * time.Minute
 	}
-	if config.MaxCatchupWindows <= 0 {
-		config.MaxCatchupWindows = 1
-	}
 	return config
-}
-
-type Queries interface {
-	Definitions(context.Context, Principal) ([]Record, error)
-	Definition(context.Context, string, Principal) (Record, error)
-	DefinitionVersions(context.Context, string, Principal) ([]DefinitionVersion, error)
-	AuthoringContract(context.Context, Principal) (Payload, error)
-	OperationsState(context.Context, Principal) (Payload, error)
-	PreviewDefinition(context.Context, Payload, Principal) (DefinitionPreview, error)
-	PreviewSchedule(context.Context, Payload, Principal) (DefinitionPreview, error)
-}
-
-type Commands interface {
-	SimulateDefinition(context.Context, string, Principal) (OperationResult, error)
-	RunDefinition(context.Context, string, string, Principal) (OperationResult, error)
-	RescheduleDefinition(context.Context, string, time.Time, Principal) (OperationResult, error)
-	RetryRun(context.Context, string, string, Principal) (OperationResult, error)
-	CancelRun(context.Context, string, string, Principal) (OperationResult, error)
-	ResolveDeadLetter(context.Context, string, string, string, Principal) (OperationResult, error)
-	RequeueDeadLetter(context.Context, string, string, string, Principal) (OperationResult, error)
-}
-
-type Worker interface {
-	StartWorker(context.Context, WorkerConfig, bool) <-chan struct{}
 }
 
 type Factory interface {
 	Open(context.Context, ApplicationRef) (Binding, error)
 }
 
-// Binding is the only Scheduler capability consumed by Runtime composition.
-// Module and SaaS implementations must expose equivalent behavior here.
+// Binding is Runtime's only Scheduler dependency. Reconcile consumes published
+// configuration, Tick performs bounded recovery, and TriggerNow shares the
+// same durable dispatch path as clock-driven work.
 type Binding interface {
-	Queries
-	Commands
-	Worker
 	Descriptor() Descriptor
+	Reconcile(context.Context) error
+	Preview(context.Context, Schedule, time.Time, int) ([]time.Time, error)
+	Tick(context.Context, time.Time, int) (int, error)
+	TriggerNow(context.Context, string, string) (Run, error)
+	Runs(context.Context, int) ([]Run, error)
+	Start(context.Context, WorkerConfig) <-chan struct{}
 	Close(context.Context) error
 }

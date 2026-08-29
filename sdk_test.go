@@ -24,7 +24,18 @@ func TestApplicationAndDescriptorValidation(t *testing.T) {
 
 func TestWorkerConfigIsBounded(t *testing.T) {
 	config := NormalizeWorkerConfig(WorkerConfig{BatchSize: 501})
-	if config.PollInterval != 500*time.Millisecond || config.BatchSize != 500 || config.LeaseTTL != 5*time.Minute || config.MaxCatchupWindows != 1 {
+	if config.PollInterval != 500*time.Millisecond || config.BatchSize != 500 || config.LeaseTTL != 5*time.Minute {
 		t.Fatalf("unexpected normalized config: %#v", config)
+	}
+}
+
+func TestDefinitionRequiresStableTargetAndRevision(t *testing.T) {
+	definition := Definition{Key: "customer.refresh", Revision: "v1", Schedule: Schedule{Type: "cron"}, Target: TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "customer.refresh"}}
+	if err := definition.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	definition.Target.Operation = ""
+	if err := definition.Validate(); err == nil {
+		t.Fatal("definition without downstream operation accepted")
 	}
 }
