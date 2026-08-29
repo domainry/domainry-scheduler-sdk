@@ -79,6 +79,6 @@ export class SchedulerClient {
 
   private command(path: string, reason: string, confirmation?: 'confirmed', body?: unknown) {
     const evidence = this.#dependencies.evidence(reason, confirmation)
-    return this.#dependencies.request(path, { method: 'POST', body, headers: evidence.headers })
+    return this.#dependencies.request(path, { method: 'POST', body, headers: evidence.headers, requestId: evidence.idempotencyKey })
   }
 }

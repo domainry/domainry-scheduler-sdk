@@ -19,6 +19,7 @@ export interface SchedulerRequestOptions {
     method?: 'GET' | 'POST';
     body?: unknown;
     headers?: Record<string, string>;
+    requestId?: string;
 }
 export type SchedulerRequest = <T>(path: string, options?: SchedulerRequestOptions) => Promise<T>;
 export interface SchedulerEvidence {

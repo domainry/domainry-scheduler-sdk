@@ -54,6 +54,6 @@ export class SchedulerClient {
     }
     command(path, reason, confirmation, body) {
         const evidence = this.#dependencies.evidence(reason, confirmation);
-        return this.#dependencies.request(path, { method: 'POST', body, headers: evidence.headers });
+        return this.#dependencies.request(path, { method: 'POST', body, headers: evidence.headers, requestId: evidence.idempotencyKey });
     }
 }
