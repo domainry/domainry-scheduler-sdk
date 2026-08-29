@@ -2,10 +2,10 @@ package modulehost
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	ormmigration "github.com/domainry/domainry-orm/migration"
+	"github.com/domainry/domainry-orm/sqlhost"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
@@ -22,11 +22,23 @@ type Host interface {
 // migration ledger. The host continues to own and close the pool.
 type ModuleHost interface {
 	Host
-	Database() *sql.DB
-	Driver() string
-	Schema() string
+	Database() Database
+	Dialect() Dialect
 	Migrations() MigrationRegistrar
 	WorkerID() string
+}
+
+type Executor = sqlhost.Executor
+type Queryer = sqlhost.Queryer
+type Database = sqlhost.Database
+
+// Dialect is the host-selected ORM renderer. Persistence repositories consume
+// this semantic port and never inspect driver names or construct dialects.
+type Dialect interface {
+	Identifier(string) string
+	Table(string) string
+	Placeholder(int) string
+	Insert(string, []string) string
 }
 
 type SchemaMigration = ormmigration.Migration
@@ -36,6 +48,8 @@ type SchemaColumn = ormmigration.Column
 type SchemaIndex = ormmigration.Index
 
 type MigrationRegistrar interface {
+	Driver() string
+	Schema() string
 	ApplyOwnedMigrations(context.Context, string, []SchemaMigration) error
 }
 
