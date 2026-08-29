@@ -76,13 +76,16 @@ type Policy struct {
 }
 
 type Definition struct {
-	Key      string    `json:"key"`
-	Name     string    `json:"name"`
-	Status   string    `json:"status"`
-	Revision string    `json:"revision"`
-	Schedule Schedule  `json:"schedule"`
-	Target   TargetRef `json:"target"`
-	Policy   Policy    `json:"policy"`
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Revision string `json:"revision"`
+	// InitialNextRunAt seeds a new Scheduler store during first activation or
+	// Module-to-SaaS cutover. Persisted cursors remain authoritative afterward.
+	InitialNextRunAt time.Time `json:"initial_next_run_at,omitempty"`
+	Schedule         Schedule  `json:"schedule"`
+	Target           TargetRef `json:"target"`
+	Policy           Policy    `json:"policy"`
 }
 
 func (d Definition) Validate() error {

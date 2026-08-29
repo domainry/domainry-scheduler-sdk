@@ -2,8 +2,10 @@ package modulehost
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
+	ormmigration "github.com/domainry/domainry-orm/migration"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
@@ -11,9 +13,30 @@ import (
 // dispatch. Scheduler never receives Runtime stores or owner services.
 type Host interface {
 	Definitions() DefinitionProvider
-	Runs() RunStore
 	Dispatcher() Dispatcher
 	HTTPConnections() HTTPConnectionProvider
+}
+
+// ModuleHost is the complete in-process Scheduler host. Scheduler owns its
+// schema, migrations and repositories while borrowing the Runtime pool and
+// migration ledger. The host continues to own and close the pool.
+type ModuleHost interface {
+	Host
+	Database() *sql.DB
+	Driver() string
+	Schema() string
+	Migrations() MigrationRegistrar
+	WorkerID() string
+}
+
+type SchemaMigration = ormmigration.Migration
+type SchemaBaseline = ormmigration.Baseline
+type SchemaTable = ormmigration.Table
+type SchemaColumn = ormmigration.Column
+type SchemaIndex = ormmigration.Index
+
+type MigrationRegistrar interface {
+	ApplyOwnedMigrations(context.Context, string, []SchemaMigration) error
 }
 
 type DefinitionProvider interface {
