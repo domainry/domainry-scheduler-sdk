@@ -51,6 +51,9 @@ type Schedule struct {
 	Expression      string `json:"expression,omitempty"`
 	Timezone        string `json:"timezone,omitempty"`
 	IntervalSeconds int    `json:"interval_seconds,omitempty"`
+	TimeOfDay       string `json:"time_of_day,omitempty"`
+	DayOfWeek       string `json:"day_of_week,omitempty"`
+	DayOfMonth      int    `json:"day_of_month,omitempty"`
 }
 
 type TargetRef struct {
