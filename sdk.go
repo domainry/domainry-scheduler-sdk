@@ -149,8 +149,21 @@ type DownstreamReceipt struct {
 	Replay bool   `json:"replay"`
 }
 
+// Lease is the durable execution ownership granted by RunStore. Owner is a
+// process instance identity; Token fences stale workers after a lease takeover.
+type Lease struct {
+	Owner     string    `json:"owner"`
+	Token     int64     `json:"fencing_token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (l Lease) Valid() bool {
+	return strings.TrimSpace(l.Owner) != "" && l.Token > 0 && !l.ExpiresAt.IsZero()
+}
+
 type Run struct {
 	Trigger           Trigger           `json:"trigger"`
+	Lease             Lease             `json:"lease"`
 	Status            string            `json:"status"`
 	DownstreamReceipt DownstreamReceipt `json:"downstream_receipt,omitempty"`
 	LastError         string            `json:"last_error,omitempty"`

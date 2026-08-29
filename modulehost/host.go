@@ -32,6 +32,9 @@ type RunStore interface {
 	DisableMissing(context.Context, []string, int64) error
 	Due(context.Context, time.Time, int) ([]DueTrigger, error)
 	Claim(context.Context, DueTrigger, time.Duration) (schedulersdk.Run, bool, error)
+	// Renew extends a live lease. The returned boolean is false when ownership
+	// was lost; callers must cancel dispatch and must not commit its result.
+	Renew(context.Context, schedulersdk.Run, time.Duration) (schedulersdk.Run, bool, error)
 	Accept(context.Context, schedulersdk.Run, schedulersdk.DownstreamReceipt) error
 	Fail(context.Context, schedulersdk.Run, error, time.Time) error
 	List(context.Context, int) ([]schedulersdk.Run, error)
