@@ -102,6 +102,13 @@ func (t *Transport) CancelRun(ctx context.Context, app schedulersdk.ApplicationR
 	err := t.request(ctx, http.MethodPost, t.path(app, "runs")+"/"+url.PathEscape(id)+"/cancel", map[string]string{"reason": reason}, &out)
 	return out, err
 }
+func (t *Transport) DeadLetters(ctx context.Context, app schedulersdk.ApplicationRef, limit int) ([]schedulersdk.DeadLetter, error) {
+	var out struct {
+		Items []schedulersdk.DeadLetter `json:"items"`
+	}
+	err := t.request(ctx, http.MethodGet, t.path(app, "dead-letters")+"?limit="+strconv.Itoa(limit), nil, &out)
+	return out.Items, err
+}
 func (t *Transport) DeadLetter(ctx context.Context, app schedulersdk.ApplicationRef, id string) (schedulersdk.DeadLetter, error) {
 	var out schedulersdk.DeadLetter
 	err := t.request(ctx, http.MethodGet, t.path(app, "dead-letters")+"/"+url.PathEscape(id), nil, &out)

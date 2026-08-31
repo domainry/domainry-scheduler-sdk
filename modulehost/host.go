@@ -78,6 +78,7 @@ type RunStore interface {
 	Get(context.Context, string) (schedulersdk.Run, error)
 	Retry(context.Context, string, string) (schedulersdk.Run, error)
 	Cancel(context.Context, string, string) (schedulersdk.Run, error)
+	DeadLetters(context.Context, int) ([]schedulersdk.DeadLetter, error)
 	DeadLetter(context.Context, string) (schedulersdk.DeadLetter, error)
 	ResolveDeadLetter(context.Context, string, string) (schedulersdk.DeadLetter, error)
 	RequeueDeadLetter(context.Context, string, string) (schedulersdk.Run, error)

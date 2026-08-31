@@ -226,6 +226,7 @@ type Binding interface {
 	Run(context.Context, string) (Run, error)
 	RetryRun(context.Context, string, string) (Run, error)
 	CancelRun(context.Context, string, string) (Run, error)
+	DeadLetters(context.Context, int) ([]DeadLetter, error)
 	DeadLetter(context.Context, string) (DeadLetter, error)
 	ResolveDeadLetter(context.Context, string, string) (DeadLetter, error)
 	RequeueDeadLetter(context.Context, string, string) (Run, error)

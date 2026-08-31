@@ -3,7 +3,7 @@
 This repository contains the deployment-neutral Scheduler protocol:
 
 - Go contracts for definitions, schedules, triggers, receipts, Module hosts and SaaS transports.
-- `schedule` for deterministic validation, recurrence planning and window keys shared by Module, SaaS and Runtime compatibility paths.
+- `schedule` for deterministic authoring validation, recurrence planning and window keys shared by Module, SaaS and Runtime compatibility paths.
 - `saashost/httptransport` for authenticated Runtime-to-SaaS communication.
 - `dispatchgateway` for authenticated Scheduler-SaaS-to-Runtime execution callbacks.
 - `@domainry/scheduler-client` in `browser/` for the Admin Console.
@@ -12,13 +12,18 @@ Runtime supplies published configuration and downstream owner capabilities throu
 
 ## Package layout
 
-- The root package is the stable Scheduler `Factory`, `Binding`, definition, trigger, and receipt entrypoint.
+- The root package is the stable Scheduler `Factory`, `Binding`, definition, trigger, receipt, run-history, and dead-letter entrypoint. Run and dead-letter queries read Scheduler-owned operational state; hosts do not project those rows into Runtime records.
 - `persistence` owns durable definition projection contracts.
 - `modulehost` describes embedded host infrastructure, providers, dispatcher, and run-store capabilities.
 - `saashost` and `saashost/httptransport` describe authenticated SaaS composition.
-- `dispatchgateway` is the execution callback boundary; `schedule` owns deterministic recurrence behavior.
+- `dispatchgateway` is the execution callback boundary; `schedule` owns deterministic authoring validation and recurrence behavior.
 - `browser` contains `@domainry/scheduler-client`.
 
 Concrete Scheduler definition DML remains in the Scheduler implementation; the SDK exposes only its deployment-neutral contract through `persistence`.
+
+The shared authoring contract accepts `workflow`, `report_snapshot_refresh`, and
+deployment-owned `http` targets. Scheduled report export is intentionally not a
+direct target: it must run through a scheduled Workflow so the Report owner and
+project Action own approval, audit, export-job, artifact, and download evidence.
 
 Run `go test ./...` before publishing an immutable SDK version.
