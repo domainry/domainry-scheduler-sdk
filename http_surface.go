@@ -1,18 +1,22 @@
 package schedulersdk
 
-const SchedulerHTTPSurfaceContractVersion = "domainry-scheduler-http-surface-v1"
+import (
+	"strings"
+
+	actioncontract "github.com/domainry/domainry-foundation/action"
+)
+
+const SchedulerHTTPSurfaceContractVersion = "domainry-scheduler-http-surface-v2"
 
 type HTTPRouteContract struct {
-	Pattern             string   `json:"pattern"`
-	Exposures           []string `json:"exposures"`
-	Authentication      string   `json:"authentication"`
-	Permission          string   `json:"permission,omitempty"`
-	AnyPermissions      []string `json:"any_permissions,omitempty"`
-	PrincipalOnly       bool     `json:"principal_only,omitempty"`
-	EffectClass         string   `json:"effect_class"`
-	HighRiskPolicy      string   `json:"high_risk_policy"`
-	IdempotencyDecision string   `json:"idempotency_decision"`
-	AuditClass          string   `json:"audit_class"`
+	Action actioncontract.ActionDefinition `json:"action"`
+}
+
+func (route HTTPRouteContract) Pattern() string {
+	if route.Action.HTTP == nil {
+		return ""
+	}
+	return route.Action.HTTP.Method + " " + route.Action.HTTP.RouteTemplate
 }
 
 type HTTPSurfaceContract struct {
@@ -42,19 +46,19 @@ func SchedulerHTTPSurfaceContract() HTTPSurfaceContract {
 	}, "status")
 	note := objectSchema(map[string]any{"note": map[string]any{"type": "string"}})
 	patterns := []HTTPRouteContract{
-		readRoute("GET /tenant-admin/scheduler/definitions", []string{"tenant_admin"}, []string{"workspace.admin", "metadata.read", "scheduler.definition.read"}, "scheduler_definition_read"),
-		readRoute("GET /tenant-admin/scheduler/definitions/{definitionID}", []string{"tenant_admin"}, []string{"workspace.admin", "metadata.read", "scheduler.definition.read"}, "scheduler_definition_read"),
-		readRoute("GET /tenant-admin/scheduler/authoring-contract", []string{"tenant_admin"}, []string{"workspace.admin", "metadata.write", "scheduler.definition.write"}, "scheduler_definition_authoring"),
-		readPostRoute("POST /tenant-admin/scheduler/definitions/validate", []string{"tenant_admin"}, []string{"workspace.admin", "metadata.write", "scheduler.definition.write"}, "scheduler_definition_validation"),
-		readPostRoute("POST /tenant-admin/scheduler/schedules/preview", []string{"tenant_admin"}, []string{"workspace.admin", "metadata.write", "scheduler.definition.write"}, "scheduler_schedule_preview"),
-		readPostRoute("POST /tenant-admin/scheduler/definitions/{definitionID}/simulate", []string{"tenant_admin"}, nil, "scheduler_definition_simulation"),
-		readRoute("GET /operations/scheduler/state", []string{"ops"}, []string{"operations.read", "scheduler.command"}, "scheduler_operations_read"),
-		commandRoute("POST /operations/scheduler/definitions/{definitionID}/run"),
-		commandRoute("POST /operations/scheduler/definitions/{definitionID}/reschedule"),
-		commandRoute("POST /operations/scheduler/runs/{runID}/retry"),
-		commandRoute("POST /operations/scheduler/runs/{runID}/cancel"),
-		commandRoute("POST /operations/scheduler/dead-letters/{deadLetterID}/resolve"),
-		commandRoute("POST /operations/scheduler/dead-letters/{deadLetterID}/requeue"),
+		schedulerRoute("scheduler.definitions.list", "GET /tenant-admin/scheduler/definitions", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
+		schedulerRoute("scheduler.definitions.get", "GET /tenant-admin/scheduler/definitions/{definitionID}", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
+		schedulerRoute("scheduler.authoring_contract.get", "GET /tenant-admin/scheduler/authoring-contract", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "not_applicable", "scheduler_definition_authoring"),
+		schedulerRoute("scheduler.definitions.validate", "POST /tenant-admin/scheduler/definitions/validate", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "natural", "scheduler_definition_validation"),
+		schedulerRoute("scheduler.schedules.preview", "POST /tenant-admin/scheduler/schedules/preview", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "natural", "scheduler_schedule_preview"),
+		schedulerRoute("scheduler.definitions.simulate", "POST /tenant-admin/scheduler/definitions/{definitionID}/simulate", actioncontract.ExposureTenantAdmin, actioncontract.EffectRead, "natural", "scheduler_definition_simulation"),
+		schedulerRoute("scheduler.state.get", "GET /operations/scheduler/state", actioncontract.ExposureOps, actioncontract.EffectRead, "not_applicable", "scheduler_operations_read"),
+		schedulerRoute("scheduler.definitions.run", "POST /operations/scheduler/definitions/{definitionID}/run", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
+		schedulerRoute("scheduler.definitions.reschedule", "POST /operations/scheduler/definitions/{definitionID}/reschedule", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
+		schedulerRoute("scheduler.runs.retry", "POST /operations/scheduler/runs/{runID}/retry", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
+		schedulerRoute("scheduler.runs.cancel", "POST /operations/scheduler/runs/{runID}/cancel", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
+		schedulerRoute("scheduler.dead_letters.resolve", "POST /operations/scheduler/dead-letters/{deadLetterID}/resolve", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
+		schedulerRoute("scheduler.dead_letters.requeue", "POST /operations/scheduler/dead-letters/{deadLetterID}/requeue", actioncontract.ExposureOps, actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command"),
 	}
 	operations := map[string]map[string]any{
 		"GET /tenant-admin/scheduler/definitions": schedulerOperation("listSchedulerDefinitions", "List published Scheduler definitions", nil, nil,
@@ -80,16 +84,22 @@ func SchedulerHTTPSurfaceContract() HTTPSurfaceContract {
 	return HTTPSurfaceContract{ContractVersion: SchedulerHTTPSurfaceContractVersion, Owner: "scheduler", Name: "scheduler_external", Routes: patterns, OpenAPI: operations}
 }
 
-func readRoute(pattern string, exposures, permissions []string, audit string) HTTPRouteContract {
-	return HTTPRouteContract{Pattern: pattern, Exposures: exposures, Authentication: "authenticated", AnyPermissions: permissions, EffectClass: "read", HighRiskPolicy: "none", IdempotencyDecision: "not_applicable", AuditClass: audit}
-}
-
-func readPostRoute(pattern string, exposures, permissions []string, audit string) HTTPRouteContract {
-	return HTTPRouteContract{Pattern: pattern, Exposures: exposures, Authentication: "authenticated", AnyPermissions: permissions, PrincipalOnly: len(permissions) == 0, EffectClass: "read", HighRiskPolicy: "none", IdempotencyDecision: "natural", AuditClass: audit}
-}
-
-func commandRoute(pattern string) HTTPRouteContract {
-	return HTTPRouteContract{Pattern: pattern, Exposures: []string{"ops"}, Authentication: "authenticated", AnyPermissions: []string{"workspace.admin", "scheduler.command"}, EffectClass: "write", HighRiskPolicy: "none", IdempotencyDecision: "caller_key_required", AuditClass: "scheduler_owner_command"}
+func schedulerRoute(key, pattern string, exposure actioncontract.Exposure, effect actioncontract.EffectClass, idempotency, audit string) HTTPRouteContract {
+	method, path, _ := strings.Cut(pattern, " ")
+	separator := strings.LastIndex(key, ".")
+	risk := actioncontract.RiskMedium
+	if effect == actioncontract.EffectRead {
+		risk = actioncontract.RiskLow
+	}
+	action := actioncontract.ActionDefinition{
+		Key: key, Owner: "module:scheduler", SourceKind: "module_surface", CapabilityKey: "scheduler.product", CapabilityLabel: "Scheduler",
+		OperationKey: key[separator+1:], OperationLabel: key, Label: key, Exposures: []actioncontract.Exposure{exposure},
+		Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission},
+		HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path},
+		Permission:    &actioncontract.PermissionDefinition{Key: key, Owner: "module:scheduler", ResourceKey: key[:separator], ActionKey: key[separator+1:], Label: key, Category: "Scheduler", LifecycleStatus: actioncontract.LifecycleActive},
+		EffectClass:   effect, RiskLevel: risk, IdempotencyDecision: idempotency, AuditClass: audit, LifecycleStatus: actioncontract.LifecycleActive,
+	}
+	return HTTPRouteContract{Action: action}
 }
 
 func schedulerOperation(operationID, summary string, parameters []any, requestSchema, responseSchema map[string]any) map[string]any {

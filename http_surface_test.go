@@ -9,9 +9,10 @@ func TestSchedulerHTTPSurfaceOwnsEveryExternalRuntimeFacadeRoute(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, route := range contract.Routes {
-		if seen[route.Pattern] || contract.OpenAPI[route.Pattern]["operationId"] == nil {
-			t.Fatalf("incomplete Scheduler route %q", route.Pattern)
+		pattern := route.Pattern()
+		if seen[pattern] || contract.OpenAPI[pattern]["operationId"] == nil || route.Action.Permission == nil || route.Action.Permission.Key != route.Action.Key {
+			t.Fatalf("incomplete Scheduler route %q", pattern)
 		}
-		seen[route.Pattern] = true
+		seen[pattern] = true
 	}
 }
