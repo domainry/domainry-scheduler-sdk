@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/domainry/domainry-foundation/modulecapability"
 )
 
 type DeploymentMode string
@@ -216,6 +218,7 @@ type Factory interface {
 // configuration, Tick performs bounded recovery, and TriggerNow shares the
 // same durable dispatch path as clock-driven work.
 type Binding interface {
+	modulecapability.Binding
 	Descriptor() Descriptor
 	Reconcile(context.Context) error
 	Preview(context.Context, Schedule, time.Time, int) ([]time.Time, error)

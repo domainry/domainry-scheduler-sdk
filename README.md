@@ -16,7 +16,8 @@ Runtime supplies published configuration and downstream owner capabilities throu
 - `persistence` owns durable definition projection contracts.
 - `modulehost` describes embedded host infrastructure, providers, dispatcher, and run-store capabilities.
 - `saashost` and `saashost/httptransport` describe authenticated SaaS composition.
-- `dispatchgateway` is the execution callback boundary; `schedule` owns deterministic authoring validation and recurrence behavior.
+- `authoring` owns Scheduler capability schemas, examples, source evidence, Tenant Admin DTOs, and definition projection contracts; hosts only aggregate/adapt them.
+- `dispatchgateway` is the execution callback boundary; `schedule` owns deterministic authoring validation, preview, and recurrence behavior.
 - `browser` contains `@domainry/scheduler-client`.
 
 Concrete Scheduler definition DML remains in the Scheduler implementation; the SDK exposes only its deployment-neutral contract through `persistence`.
