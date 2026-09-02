@@ -3,6 +3,7 @@ package authoring
 import (
 	"testing"
 
+	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 	"github.com/domainry/domainry-scheduler-sdk/schedule"
 )
 
@@ -24,6 +25,33 @@ func TestDomainExamplesExecuteOwnerValidators(t *testing.T) {
 			}
 			if len(example.ExpectedErrorCodes) > 0 && schedule.ValidationCode(err) != example.ExpectedErrorCodes[0] {
 				t.Fatalf("capability=%s example=%s code=%q want=%q", capability.Key, example.Name, schedule.ValidationCode(err), example.ExpectedErrorCodes[0])
+			}
+		}
+	}
+}
+
+func TestDomainProjectsOnlyExactPermissionsFromSchedulerActionManifest(t *testing.T) {
+	actions, err := schedulersdk.SchedulerAuthorizationActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := make(map[string]bool, len(actions))
+	for _, action := range actions {
+		if action.Permission == nil || action.Permission.Key != action.Key {
+			t.Fatalf("Scheduler role Action is not same-key: %+v", action)
+		}
+		known[action.Key] = true
+	}
+	for _, capability := range Domain().Capabilities {
+		if capability.Execution == nil || capability.Execution.PermissionModel != exactActionPermissionModel {
+			t.Fatalf("capability %q permission model=%#v", capability.Key, capability.Execution)
+		}
+		if len(capability.Permissions) == 0 {
+			t.Fatalf("capability %q has no exact Action projection", capability.Key)
+		}
+		for _, permission := range capability.Permissions {
+			if !known[permission] {
+				t.Fatalf("capability %q references non-manifest permission %q", capability.Key, permission)
 			}
 		}
 	}
