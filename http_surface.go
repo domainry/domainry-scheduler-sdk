@@ -153,7 +153,7 @@ func schedulerRoute(key, capabilityKey, capabilityLabel, pattern string, effect 
 	return actioncontract.ActionDefinition{
 		Key: key, Owner: SchedulerAuthorizationOwner, SourceKind: "host_facade", CapabilityKey: capabilityKey, CapabilityLabel: capabilityLabel,
 		OperationKey: key[separator+1:], OperationLabel: key, Label: key, Exposures: exposures,
-		Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission},
+		Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated},
 		HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path},
 		Permission:    &actioncontract.PermissionDefinition{Key: key, Owner: SchedulerAuthorizationOwner, ResourceKey: key[:separator], OperationKey: key[separator+1:], Label: key, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive},
 		EffectClass:   effect, RiskLevel: risk, ApprovalPolicies: append([]actioncontract.ApprovalPolicy(nil), approvals...),
