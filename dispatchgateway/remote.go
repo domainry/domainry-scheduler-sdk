@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,25 +17,25 @@ import (
 )
 
 type RemoteConfig struct {
-	BaseURL, ServiceCredential string
-	HTTPClient                 *http.Client
-	RequestTimeout             time.Duration
-	MaxAttempts                int
+	BaseURL, SigningSecret string
+	HTTPClient             *http.Client
+	RequestTimeout         time.Duration
+	MaxAttempts            int
 }
 
 type Remote struct{ config RemoteConfig }
 
 func RemoteConfigFromEnvironment() RemoteConfig {
 	return RemoteConfig{
-		BaseURL:           strings.TrimSpace(os.Getenv("SCHEDULER_RUNTIME_ENDPOINT")),
-		ServiceCredential: strings.TrimSpace(os.Getenv("SCHEDULER_RUNTIME_SERVICE_CREDENTIAL")),
+		BaseURL:       strings.TrimSpace(os.Getenv("SCHEDULER_RUNTIME_ENDPOINT")),
+		SigningSecret: strings.TrimSpace(os.Getenv("SCHEDULER_RUNTIME_SIGNING_SECRET")),
 	}
 }
 
 func NewRemote(config RemoteConfig) (*Remote, error) {
 	config.BaseURL = strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
 	parsed, err := url.Parse(config.BaseURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.TrimSpace(config.ServiceCredential) == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.TrimSpace(config.SigningSecret) == "" {
 		return nil, fmt.Errorf("Scheduler Dispatch Gateway remote configuration is invalid")
 	}
 	if config.HTTPClient == nil {
@@ -59,9 +60,9 @@ func (r *Remote) Dispatch(ctx context.Context, application schedulersdk.Applicat
 	}
 	var last error
 	for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
-		receipt, retry, callErr := r.perform(ctx, application, body)
+		receipt, retry, callErr := r.perform(ctx, application, request.ExecutionID, body)
 		if callErr == nil {
-			if receipt.RunID != request.Trigger.RunID || strings.TrimSpace(receipt.ID) == "" || strings.TrimSpace(receipt.Status) == "" {
+			if receipt.ExecutionID != request.ExecutionID || strings.TrimSpace(receipt.ID) == "" || strings.TrimSpace(receipt.Status) == "" {
 				return Receipt{}, fmt.Errorf("Scheduler Dispatch Gateway receipt identity mismatch")
 			}
 			return receipt, nil
@@ -79,7 +80,7 @@ func (r *Remote) Dispatch(ctx context.Context, application schedulersdk.Applicat
 	return Receipt{}, last
 }
 
-func (r *Remote) perform(parent context.Context, application schedulersdk.ApplicationRef, body []byte) (Receipt, bool, error) {
+func (r *Remote) perform(parent context.Context, application schedulersdk.ApplicationRef, executionID string, body []byte) (Receipt, bool, error) {
 	ctx, cancel := context.WithTimeout(parent, r.config.RequestTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.BaseURL+AcceptPath, bytes.NewReader(body))
@@ -87,8 +88,11 @@ func (r *Remote) perform(parent context.Context, application schedulersdk.Applic
 		return Receipt{}, false, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Domainry-Service-Credential", r.config.ServiceCredential)
 	request.Header.Set("X-Domainry-Runtime-ID", application.RuntimeID)
+	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	request.Header.Set(ClientIDHeader, SchedulerClientID)
+	request.Header.Set(TimestampHeader, timestamp)
+	request.Header.Set(SignatureHeader, Sign(body, executionID, SchedulerClientID, timestamp, []byte(r.config.SigningSecret)))
 	response, err := r.config.HTTPClient.Do(request)
 	if err != nil {
 		return Receipt{}, true, err

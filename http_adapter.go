@@ -48,10 +48,9 @@ type HTTPAdapterContract struct {
 	OpenAPI         map[string]map[string]any `json:"openapi_operations"`
 }
 
-// SchedulerHTTPAdapterContract is the source-owned external Runtime facade.
-// Runtime hosts these routes because it owns principals, published metadata,
-// and operation receipts, but Scheduler owns their scheduling semantics and
-// deployment-neutral Binding calls.
+// SchedulerHTTPAdapterContract is the source-owned Scheduler service surface.
+// Definition, clock, run, retry, cancel and dead-letter requests enter through
+// Scheduler in both Module and SaaS topologies; Runtime must not republish it.
 func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 	definitions := schedulerDefinitionHTTPSchema()
 	authoringContract := objectSchema(map[string]any{
@@ -151,7 +150,7 @@ func schedulerRoute(key, capabilityKey, capabilityLabel, pattern string, effect 
 		exposures = append([]actioncontract.Exposure{actioncontract.ExposurePublic}, exposures...)
 	}
 	return actioncontract.ActionDefinition{
-		Key: key, Owner: SchedulerAuthorizationOwner, SourceKind: "host_facade", CapabilityKey: capabilityKey, CapabilityLabel: capabilityLabel,
+		Key: key, Owner: SchedulerAuthorizationOwner, SourceKind: "service_protocol", CapabilityKey: capabilityKey, CapabilityLabel: capabilityLabel,
 		OperationKey: key[separator+1:], OperationLabel: key, Label: key, Exposures: exposures,
 		Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated},
 		HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path},

@@ -7,25 +7,32 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
-const AcceptPath = "/scheduler/triggers/accept"
+// AcceptPath is Runtime's target-execution boundary. Scheduler remains the
+// scheduling ingress and owns the trigger; Runtime only routes the resolved
+// target into a Runtime-resident executor.
+const AcceptPath = "/dispatch/executions"
 
 type Request struct {
-	RuntimeID string               `json:"runtime_id"`
-	Trigger   schedulersdk.Trigger `json:"trigger"`
+	RuntimeID      string                 `json:"runtime_id"`
+	ExecutionID    string                 `json:"execution_id"`
+	IdempotencyKey string                 `json:"idempotency_key"`
+	DueAt          time.Time              `json:"due_at,omitempty"`
+	Target         schedulersdk.TargetRef `json:"target"`
 }
 
 func (r Request) Validate(application schedulersdk.ApplicationRef) error {
 	if err := application.Validate(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(r.RuntimeID) != application.RuntimeID || strings.TrimSpace(r.Trigger.RunID) == "" || strings.TrimSpace(r.Trigger.DefinitionKey) == "" || strings.TrimSpace(r.Trigger.IdempotencyKey) == "" {
+	if strings.TrimSpace(r.RuntimeID) != application.RuntimeID || strings.TrimSpace(r.ExecutionID) == "" || strings.TrimSpace(r.IdempotencyKey) == "" {
 		return fmt.Errorf("Scheduler Dispatch Gateway request identity and scope are required")
 	}
-	target := r.Trigger.Target
+	target := r.Target
 	targetType := strings.TrimSpace(target.Type)
 	if targetType == "" {
 		targetType = "runtime_operation"
@@ -40,10 +47,10 @@ func (r Request) Validate(application schedulersdk.ApplicationRef) error {
 }
 
 type Receipt struct {
-	RunID  string `json:"run_id"`
-	ID     string `json:"id"`
-	Owner  string `json:"owner"`
-	Status string `json:"status"`
+	ExecutionID string `json:"execution_id"`
+	ID          string `json:"id"`
+	Owner       string `json:"owner"`
+	Status      string `json:"status"`
 }
 
 type Gateway interface {
