@@ -57,14 +57,14 @@ func TestDomainProjectsOnlyExactPermissionsFromSchedulerActionManifest(t *testin
 	}
 }
 
-func TestTenantAdminProjectionAndContractAreOwnerDefined(t *testing.T) {
-	definition := ProjectTenantAdminDefinition(DefinitionProjection{Key: "fallback", Data: map[string]any{
+func TestManagementProjectionAndContractAreOwnerDefined(t *testing.T) {
+	definition := ProjectManagementDefinition(DefinitionProjection{Key: "fallback", Data: map[string]any{
 		"key": "orders.sync", "status": "enabled", "schedule_type": "cron", "cron_expression": "0 2 * * *", "max_attempts": 3,
 	}})
 	if definition.Key != "orders.sync" || definition.ScheduleExpression != "0 2 * * *" || definition.MaxAttempts != 3 {
 		t.Fatalf("definition=%#v", definition)
 	}
-	contract := TenantAdminContract()
+	contract := ManagementContract()
 	if contract.ResourceType != "scheduler" || contract.MutationOwner != "source_controlled_json" || contract.ValidationEndpoint == "" {
 		t.Fatalf("contract=%#v", contract)
 	}

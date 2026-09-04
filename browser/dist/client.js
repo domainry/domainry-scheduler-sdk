@@ -12,12 +12,12 @@ export class SchedulerClient {
         this.#dependencies = dependencies;
     }
     async definitions() {
-        const response = await this.#dependencies.request('/tenant-admin/scheduler/definitions');
+        const response = await this.#dependencies.request('/scheduler/definitions');
         const items = (response.items ?? []).map(record);
         return { items, count: response.count ?? items.length };
     }
     async state() {
-        const response = await this.#dependencies.request('/operations/scheduler/state');
+        const response = await this.#dependencies.request('/scheduler/state');
         return {
             provisioned: response.provisioned,
             runs: (response.runs ?? []).map(record),
@@ -25,32 +25,32 @@ export class SchedulerClient {
         };
     }
     previewDefinition(data) {
-        return this.#dependencies.request('/tenant-admin/scheduler/definitions/validate', { method: 'POST', body: { data } });
+        return this.#dependencies.request('/scheduler/definitions/validate', { method: 'POST', body: { data } });
     }
     authoringContract() {
-        return this.#dependencies.request('/tenant-admin/scheduler/authoring-contract');
+        return this.#dependencies.request('/scheduler/authoring-contract');
     }
     definition(definitionID) {
-        return this.#dependencies.request(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}`);
+        return this.#dependencies.request(`/scheduler/definitions/${encodeURIComponent(definitionID)}`);
     }
     async versions(definitionID) {
-        const response = await this.#dependencies.request(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}/versions`);
+        const response = await this.#dependencies.request(`/scheduler/definitions/${encodeURIComponent(definitionID)}/versions`);
         return response.items ?? [];
     }
     simulate(definitionID) {
-        return this.#dependencies.request(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}/simulate`, { method: 'POST' });
+        return this.#dependencies.request(`/scheduler/definitions/${encodeURIComponent(definitionID)}/simulate`, { method: 'POST' });
     }
     run(definitionID, reason) {
-        return this.command(`/operations/scheduler/definitions/${encodeURIComponent(definitionID)}/run`, reason);
+        return this.command(`/scheduler/definitions/${encodeURIComponent(definitionID)}/run`, reason);
     }
     retry(runID, reason) {
-        return this.command(`/operations/scheduler/runs/${encodeURIComponent(runID)}/retry`, reason);
+        return this.command(`/scheduler/runs/${encodeURIComponent(runID)}/retry`, reason);
     }
     cancel(runID, reason) {
-        return this.command(`/operations/scheduler/runs/${encodeURIComponent(runID)}/cancel`, reason, 'confirmed');
+        return this.command(`/scheduler/runs/${encodeURIComponent(runID)}/cancel`, reason, 'confirmed');
     }
     resolve(deadLetterID, note) {
-        return this.command(`/operations/scheduler/dead-letters/${encodeURIComponent(deadLetterID)}/resolve`, note, 'confirmed', { note });
+        return this.command(`/scheduler/dead-letters/${encodeURIComponent(deadLetterID)}/resolve`, note, 'confirmed', { note });
     }
     command(path, reason, confirmation, body) {
         const evidence = this.#dependencies.evidence(reason, confirmation);

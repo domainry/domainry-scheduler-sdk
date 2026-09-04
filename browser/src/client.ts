@@ -22,7 +22,7 @@ export class SchedulerClient {
   }
 
   async definitions(): Promise<{ items: SchedulerRecord[]; count: number }> {
-    const response = await this.#dependencies.request<{ items?: Array<Record<string, unknown>>; count?: number }>('/tenant-admin/scheduler/definitions')
+    const response = await this.#dependencies.request<{ items?: Array<Record<string, unknown>>; count?: number }>('/scheduler/definitions')
     const items = (response.items ?? []).map(record)
     return { items, count: response.count ?? items.length }
   }
@@ -32,7 +32,7 @@ export class SchedulerClient {
       provisioned: boolean
       runs?: Array<Record<string, unknown>>
       dead_letters?: Array<Record<string, unknown>>
-    }>('/operations/scheduler/state')
+    }>('/scheduler/state')
     return {
       provisioned: response.provisioned,
       runs: (response.runs ?? []).map(record),
@@ -41,40 +41,40 @@ export class SchedulerClient {
   }
 
   previewDefinition(data: Record<string, unknown>) {
-    return this.#dependencies.request<{ next_runs: string[] }>('/tenant-admin/scheduler/definitions/validate', { method: 'POST', body: { data } })
+    return this.#dependencies.request<{ next_runs: string[] }>('/scheduler/definitions/validate', { method: 'POST', body: { data } })
   }
 
   authoringContract<T = Record<string, unknown>>() {
-    return this.#dependencies.request<T>('/tenant-admin/scheduler/authoring-contract')
+    return this.#dependencies.request<T>('/scheduler/authoring-contract')
   }
 
   definition(definitionID: string) {
-    return this.#dependencies.request<Record<string, unknown>>(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}`)
+    return this.#dependencies.request<Record<string, unknown>>(`/scheduler/definitions/${encodeURIComponent(definitionID)}`)
   }
 
   async versions(definitionID: string): Promise<SchedulerDefinitionVersion[]> {
-    const response = await this.#dependencies.request<{ items?: SchedulerDefinitionVersion[] }>(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}/versions`)
+    const response = await this.#dependencies.request<{ items?: SchedulerDefinitionVersion[] }>(`/scheduler/definitions/${encodeURIComponent(definitionID)}/versions`)
     return response.items ?? []
   }
 
   simulate(definitionID: string) {
-    return this.#dependencies.request(`/tenant-admin/scheduler/definitions/${encodeURIComponent(definitionID)}/simulate`, { method: 'POST' })
+    return this.#dependencies.request(`/scheduler/definitions/${encodeURIComponent(definitionID)}/simulate`, { method: 'POST' })
   }
 
   run(definitionID: string, reason: string) {
-    return this.command(`/operations/scheduler/definitions/${encodeURIComponent(definitionID)}/run`, reason)
+    return this.command(`/scheduler/definitions/${encodeURIComponent(definitionID)}/run`, reason)
   }
 
   retry(runID: string, reason: string) {
-    return this.command(`/operations/scheduler/runs/${encodeURIComponent(runID)}/retry`, reason)
+    return this.command(`/scheduler/runs/${encodeURIComponent(runID)}/retry`, reason)
   }
 
   cancel(runID: string, reason: string) {
-    return this.command(`/operations/scheduler/runs/${encodeURIComponent(runID)}/cancel`, reason, 'confirmed')
+    return this.command(`/scheduler/runs/${encodeURIComponent(runID)}/cancel`, reason, 'confirmed')
   }
 
   resolve(deadLetterID: string, note: string) {
-    return this.command(`/operations/scheduler/dead-letters/${encodeURIComponent(deadLetterID)}/resolve`, note, 'confirmed', { note })
+    return this.command(`/scheduler/dead-letters/${encodeURIComponent(deadLetterID)}/resolve`, note, 'confirmed', { note })
   }
 
   private command(path: string, reason: string, confirmation?: 'confirmed', body?: unknown) {

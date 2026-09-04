@@ -7,7 +7,7 @@ import (
 	actioncontract "github.com/domainry/domainry-foundation/action"
 )
 
-const SchedulerHTTPSurfaceContractVersion = "domainry-scheduler-http-surface-v2"
+const SchedulerHTTPAdapterContractVersion = "domainry-scheduler-http-adapter-v1"
 
 const SchedulerAuthorizationOwner = "module:scheduler"
 
@@ -40,7 +40,7 @@ func (route HTTPRouteContract) Pattern() string {
 	return route.Action.HTTP.Method + " " + route.Action.HTTP.RouteTemplate
 }
 
-type HTTPSurfaceContract struct {
+type HTTPAdapterContract struct {
 	ContractVersion string                    `json:"contract_version"`
 	Owner           string                    `json:"owner"`
 	Name            string                    `json:"name"`
@@ -48,12 +48,12 @@ type HTTPSurfaceContract struct {
 	OpenAPI         map[string]map[string]any `json:"openapi_operations"`
 }
 
-// SchedulerHTTPSurfaceContract is the source-owned external Runtime facade.
+// SchedulerHTTPAdapterContract is the source-owned external Runtime facade.
 // Runtime hosts these routes because it owns principals, published metadata,
 // and operation receipts, but Scheduler owns their scheduling semantics and
 // deployment-neutral Binding calls.
-func SchedulerHTTPSurfaceContract() (HTTPSurfaceContract, error) {
-	definitions := tenantAdminDefinitionHTTPSchema()
+func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
+	definitions := schedulerDefinitionHTTPSchema()
 	authoringContract := objectSchema(map[string]any{
 		"resource_type": map[string]any{"type": "string"}, "status_field": map[string]any{"type": "string"}, "allowed_statuses": arraySchema(map[string]any{"type": "string"}),
 		"business_calendar_field": map[string]any{"type": "string"}, "mutation_owner": map[string]any{"type": "string"}, "validation_endpoint": map[string]any{"type": "string"},
@@ -68,7 +68,7 @@ func SchedulerHTTPSurfaceContract() (HTTPSurfaceContract, error) {
 	note := objectSchema(map[string]any{"note": map[string]any{"type": "string"}})
 	actions, err := SchedulerAuthorizationActions()
 	if err != nil {
-		return HTTPSurfaceContract{}, err
+		return HTTPAdapterContract{}, err
 	}
 	operationsByAction := map[string]map[string]any{
 		ActionSchedulerDefinitionsList: schedulerOperation("listSchedulerDefinitions", "List published Scheduler definitions", nil, nil,
@@ -96,7 +96,7 @@ func SchedulerHTTPSurfaceContract() (HTTPSurfaceContract, error) {
 	for _, action := range actions {
 		operation, found := operationsByAction[action.Key]
 		if !found {
-			return HTTPSurfaceContract{}, fmt.Errorf("Scheduler Action %q has no OpenAPI operation", action.Key)
+			return HTTPAdapterContract{}, fmt.Errorf("Scheduler Action %q has no OpenAPI operation", action.Key)
 		}
 		route := HTTPRouteContract{Action: action}
 		routes = append(routes, route)
@@ -104,26 +104,26 @@ func SchedulerHTTPSurfaceContract() (HTTPSurfaceContract, error) {
 		delete(operationsByAction, action.Key)
 	}
 	if len(operationsByAction) != 0 {
-		return HTTPSurfaceContract{}, fmt.Errorf("Scheduler OpenAPI operations have no Action manifest entries")
+		return HTTPAdapterContract{}, fmt.Errorf("Scheduler OpenAPI operations have no Action manifest entries")
 	}
-	return HTTPSurfaceContract{ContractVersion: SchedulerHTTPSurfaceContractVersion, Owner: "scheduler", Name: "scheduler_external", Routes: routes, OpenAPI: operations}, nil
+	return HTTPAdapterContract{ContractVersion: SchedulerHTTPAdapterContractVersion, Owner: "scheduler", Name: "scheduler_external", Routes: routes, OpenAPI: operations}, nil
 }
 
 func SchedulerAuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 	definitions := []actioncontract.ActionDefinition{
-		schedulerRoute(ActionSchedulerDefinitionsList, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /tenant-admin/scheduler/definitions", actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
-		schedulerRoute(ActionSchedulerDefinitionsGet, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /tenant-admin/scheduler/definitions/{definitionID}", actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
-		schedulerRoute(ActionSchedulerAuthoringContractGet, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /tenant-admin/scheduler/authoring-contract", actioncontract.EffectRead, "not_applicable", "scheduler_definition_authoring"),
-		schedulerRoute(ActionSchedulerDefinitionsValidate, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /tenant-admin/scheduler/definitions/validate", actioncontract.EffectRead, "not_applicable", "scheduler_definition_validation"),
-		schedulerRoute(ActionSchedulerSchedulesPreview, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /tenant-admin/scheduler/schedules/preview", actioncontract.EffectRead, "not_applicable", "scheduler_schedule_preview"),
-		schedulerRoute(ActionSchedulerDefinitionsSimulate, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /tenant-admin/scheduler/definitions/{definitionID}/simulate", actioncontract.EffectRead, "not_applicable", "scheduler_definition_simulation"),
-		schedulerRoute(ActionSchedulerStateGet, CapabilitySchedulerOperations, "Scheduler operations", "GET /operations/scheduler/state", actioncontract.EffectRead, "not_applicable", "scheduler_operations_read"),
-		schedulerRoute(ActionSchedulerDefinitionsRun, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/definitions/{definitionID}/run", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
-		schedulerRoute(ActionSchedulerDefinitionsReschedule, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/definitions/{definitionID}/reschedule", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
-		schedulerRoute(ActionSchedulerRunsRetry, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/runs/{runID}/retry", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
-		schedulerRoute(ActionSchedulerRunsCancel, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/runs/{runID}/cancel", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
-		schedulerRoute(ActionSchedulerDeadLettersResolve, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/dead-letters/{deadLetterID}/resolve", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
-		schedulerRoute(ActionSchedulerDeadLettersRequeue, CapabilitySchedulerOperations, "Scheduler operations", "POST /operations/scheduler/dead-letters/{deadLetterID}/requeue", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
+		schedulerRoute(ActionSchedulerDefinitionsList, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /scheduler/definitions", actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
+		schedulerRoute(ActionSchedulerDefinitionsGet, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /scheduler/definitions/{definitionID}", actioncontract.EffectRead, "not_applicable", "scheduler_definition_read"),
+		schedulerRoute(ActionSchedulerAuthoringContractGet, CapabilitySchedulerAuthoring, "Scheduler authoring", "GET /scheduler/authoring-contract", actioncontract.EffectRead, "not_applicable", "scheduler_definition_authoring"),
+		schedulerRoute(ActionSchedulerDefinitionsValidate, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /scheduler/definitions/validate", actioncontract.EffectRead, "not_applicable", "scheduler_definition_validation"),
+		schedulerRoute(ActionSchedulerSchedulesPreview, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /scheduler/schedules/preview", actioncontract.EffectRead, "not_applicable", "scheduler_schedule_preview"),
+		schedulerRoute(ActionSchedulerDefinitionsSimulate, CapabilitySchedulerAuthoring, "Scheduler authoring", "POST /scheduler/definitions/{definitionID}/simulate", actioncontract.EffectRead, "not_applicable", "scheduler_definition_simulation"),
+		schedulerRoute(ActionSchedulerStateGet, CapabilitySchedulerOperations, "Scheduler operations", "GET /scheduler/state", actioncontract.EffectRead, "not_applicable", "scheduler_operations_read"),
+		schedulerRoute(ActionSchedulerDefinitionsRun, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/definitions/{definitionID}/run", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
+		schedulerRoute(ActionSchedulerDefinitionsReschedule, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/definitions/{definitionID}/reschedule", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
+		schedulerRoute(ActionSchedulerRunsRetry, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/runs/{runID}/retry", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason),
+		schedulerRoute(ActionSchedulerRunsCancel, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/runs/{runID}/cancel", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
+		schedulerRoute(ActionSchedulerDeadLettersResolve, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/dead-letters/{deadLetterID}/resolve", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
+		schedulerRoute(ActionSchedulerDeadLettersRequeue, CapabilitySchedulerOperations, "Scheduler operations", "POST /scheduler/dead-letters/{deadLetterID}/requeue", actioncontract.EffectWrite, "caller_key_required", "scheduler_owner_command", actioncontract.ApprovalReason, actioncontract.ApprovalConfirmation),
 	}
 	result := make([]actioncontract.ActionDefinition, 0, len(definitions))
 	for _, definition := range definitions {
@@ -146,7 +146,7 @@ func schedulerRoute(key, capabilityKey, capabilityLabel, pattern string, effect 
 	if len(approvals) != 0 {
 		risk = actioncontract.RiskHigh
 	}
-	exposures := []actioncontract.Exposure{actioncontract.ExposureTenantAdmin, actioncontract.ExposureOps}
+	exposures := []actioncontract.Exposure{actioncontract.ExposureManagement, actioncontract.ExposureOps}
 	if capabilityKey == CapabilitySchedulerAuthoring {
 		exposures = append([]actioncontract.Exposure{actioncontract.ExposurePublic}, exposures...)
 	}
@@ -217,7 +217,7 @@ func schedulerDeadLetterHTTPSchema() map[string]any {
 	}, "id", "run_id", "status")
 }
 
-func tenantAdminDefinitionHTTPSchema() map[string]any {
+func schedulerDefinitionHTTPSchema() map[string]any {
 	properties := map[string]any{}
 	for _, name := range []string{
 		"key", "name", "status", "schedule_type", "schedule_expression", "time_of_day", "day_of_week", "timezone", "business_calendar_key", "target_type", "target_key", "target_object", "run_as_role",

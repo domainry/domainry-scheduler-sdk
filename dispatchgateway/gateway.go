@@ -11,7 +11,7 @@ import (
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
-const AcceptPath = "/v1/scheduler-triggers:accept"
+const AcceptPath = "/scheduler/triggers/accept"
 
 type Request struct {
 	RuntimeID string               `json:"runtime_id"`

@@ -7,9 +7,9 @@ import (
 	"github.com/domainry/domainry-scheduler-sdk/schedule"
 )
 
-// TenantAdminDefinition is Scheduler's governed business-facing definition
+// ManagementDefinition is Scheduler's governed business-facing definition
 // projection. Durable run, cursor, event, and dead-letter state is excluded.
-type TenantAdminDefinition struct {
+type ManagementDefinition struct {
 	Key                 string `json:"key"`
 	Name                string `json:"name,omitempty"`
 	Status              string `json:"status"`
@@ -41,14 +41,14 @@ type TenantAdminDefinition struct {
 	UpdatedAt           string `json:"updated_at,omitempty"`
 }
 
-type TenantAdminDefinitionVersion struct {
+type ManagementDefinitionVersion struct {
 	VersionID string                `json:"version_id"`
 	Event     string                `json:"event"`
 	CreatedAt string                `json:"created_at"`
-	Value     TenantAdminDefinition `json:"value"`
+	Value     ManagementDefinition `json:"value"`
 }
 
-type TenantAdminAuthoringContract struct {
+type ManagementAuthoringContract struct {
 	ResourceType          string   `json:"resource_type"`
 	StatusField           string   `json:"status_field"`
 	AllowedStatuses       []string `json:"allowed_statuses"`
@@ -64,8 +64,8 @@ type DefinitionProjection struct {
 	UpdatedAt string
 }
 
-func ProjectTenantAdminDefinition(definition DefinitionProjection) TenantAdminDefinition {
-	return TenantAdminDefinition{
+func ProjectManagementDefinition(definition DefinitionProjection) ManagementDefinition {
+	return ManagementDefinition{
 		Key:                 valueOrID(definition.Data, "key", definition.Key),
 		Name:                stringValue(definition.Data, "name"),
 		Status:              stringValue(definition.Data, "status"),
@@ -98,13 +98,13 @@ func ProjectTenantAdminDefinition(definition DefinitionProjection) TenantAdminDe
 	}
 }
 
-func TenantAdminContract() TenantAdminAuthoringContract {
-	return TenantAdminAuthoringContract{
+func ManagementContract() ManagementAuthoringContract {
+	return ManagementAuthoringContract{
 		ResourceType: "scheduler", StatusField: "status",
 		AllowedStatuses:       []string{"enabled", "disabled", "paused", "archived"},
 		BusinessCalendarField: "business_calendar_key",
 		MutationOwner:         "source_controlled_json",
-		ValidationEndpoint:    "/tenant-admin/scheduler/definitions/validate",
+		ValidationEndpoint:    "/scheduler/definitions/validate",
 	}
 }
 

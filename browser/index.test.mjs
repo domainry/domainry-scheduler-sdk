@@ -18,6 +18,6 @@ test('normalizes owner projections and preserves command evidence', async () => 
   assert.deepEqual(await client.definitions(), { items: [{ id: 'daily', data: { key: 'daily', status: 'enabled' }, created_at: '', updated_at: '' }], count: 1 })
   assert.equal((await client.state()).deadLetters[0].id, 'dead-1')
   await client.cancel('run/1', 'stuck run')
-  assert.equal(calls.at(-1).path, '/operations/scheduler/runs/run%2F1/cancel')
+  assert.equal(calls.at(-1).path, '/scheduler/runs/run%2F1/cancel')
   assert.equal(calls.at(-1).options.headers['X-Operation-Confirmation'], 'confirmed')
 })

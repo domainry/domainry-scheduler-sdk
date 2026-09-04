@@ -6,12 +6,12 @@ import (
 	actioncontract "github.com/domainry/domainry-foundation/action"
 )
 
-func TestSchedulerHTTPSurfaceOwnsEveryExternalRuntimeFacadeRoute(t *testing.T) {
-	contract, err := SchedulerHTTPSurfaceContract()
+func TestSchedulerHTTPAdapterOwnsEveryExternalRuntimeFacadeRoute(t *testing.T) {
+	contract, err := SchedulerHTTPAdapterContract()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contract.Owner != "scheduler" || contract.ContractVersion != SchedulerHTTPSurfaceContractVersion || len(contract.Routes) != 13 || len(contract.OpenAPI) != len(contract.Routes) {
+	if contract.Owner != "scheduler" || contract.ContractVersion != SchedulerHTTPAdapterContractVersion || len(contract.Routes) != 13 || len(contract.OpenAPI) != len(contract.Routes) {
 		t.Fatalf("Scheduler HTTP contract=%+v", contract)
 	}
 	seen := map[string]bool{}
