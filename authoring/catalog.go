@@ -7,10 +7,12 @@ import (
 
 const exactActionPermissionModel = "exact_action_same_key_permission"
 
-// SchedulerAuthoringDomain publishes Scheduler-owned definition and command contracts.
-// Persisted definitions, compositional schedule fragments, and runtime commands are
-// deliberately separate capabilities because they have different HTTP envelopes.
-func Domain() capabilitycontract.CapabilityAuthoringDomain {
+// ManagementDomain publishes Scheduler-owned management API definition and
+// command contracts. scheduler.business_job deliberately uses the flattened
+// persisted/runtime definition shape accepted by Scheduler's HTTP API. It is
+// not the nested Domain Blueprint scheduled_jobs source contract; the owning
+// Scheduler Module projects that separate boundary for model authoring.
+func ManagementDomain() capabilitycontract.CapabilityAuthoringDomain {
 	return capabilitycontract.CapabilityAuthoringDomain{Key: "scheduler", Capabilities: []capabilitycontract.CapabilityAuthoringDefinition{
 		schedulerBusinessJobAuthoringCapability(),
 		schedulerScheduleAuthoringCapability(),
@@ -21,6 +23,11 @@ func Domain() capabilitycontract.CapabilityAuthoringDomain {
 		schedulerResolveDeadLetterAuthoringCapability(),
 	}}
 }
+
+// Domain is retained as the compatibility entry point for management API
+// consumers. New code should use ManagementDomain so this contract cannot be
+// mistaken for the Domain Blueprint source shape.
+func Domain() capabilitycontract.CapabilityAuthoringDomain { return ManagementDomain() }
 
 func schedulerBusinessJobAuthoringCapability() capabilitycontract.CapabilityAuthoringDefinition {
 	parameters := schedulerBusinessJobParameters()

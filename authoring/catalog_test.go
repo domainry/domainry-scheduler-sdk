@@ -1,6 +1,7 @@
 package authoring
 
 import (
+	"reflect"
 	"testing"
 
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
@@ -67,5 +68,38 @@ func TestManagementProjectionAndContractAreOwnerDefined(t *testing.T) {
 	contract := ManagementContract()
 	if contract.ResourceType != "scheduler" || contract.MutationOwner != "source_controlled_json" || contract.ValidationEndpoint == "" {
 		t.Fatalf("contract=%#v", contract)
+	}
+}
+
+func TestManagementBusinessJobRemainsFlattenedAndExplicitlyNamed(t *testing.T) {
+	domain := ManagementDomain()
+	if domain.Key != "scheduler" {
+		t.Fatalf("management domain=%#v", domain)
+	}
+	var businessJobFound bool
+	for _, capability := range domain.Capabilities {
+		if capability.Key != "scheduler.business_job" {
+			continue
+		}
+		businessJobFound = true
+		if capability.InputSchema == nil {
+			t.Fatal("management business job input schema is absent")
+		}
+		properties := capability.InputSchema.Properties
+		if _, exists := properties["trigger_type"]; !exists {
+			t.Fatal("management business job lost its runtime trigger_type")
+		}
+		if _, exists := properties["schedule_type"]; !exists {
+			t.Fatal("management business job lost its flattened schedule_type")
+		}
+		if _, exists := properties["schedule"]; exists {
+			t.Fatal("management business job was mislabeled with the nested Blueprint schedule")
+		}
+	}
+	if !businessJobFound {
+		t.Fatal("management business job capability is absent")
+	}
+	if got, want := Domain(), domain; !reflect.DeepEqual(got, want) {
+		t.Fatalf("compatibility Domain differs from ManagementDomain: got=%#v want=%#v", got, want)
 	}
 }
