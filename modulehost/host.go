@@ -60,6 +60,7 @@ type DefinitionProvider interface {
 type DueTrigger struct {
 	Definition   schedulersdk.Definition
 	ScheduledFor time.Time
+	Metadata     []byte
 }
 
 // RunStore owns cursor, unique-window claim and terminal dispatch evidence.

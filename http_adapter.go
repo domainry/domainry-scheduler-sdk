@@ -1,6 +1,7 @@
 package schedulersdk
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,26 @@ import (
 )
 
 const SchedulerHTTPAdapterContractVersion = "domainry-scheduler-http-adapter-v1"
+
+var ErrSchedulerHTTPAuthorizationBoundaryRequired = errors.New("Scheduler HTTP routes require a trusted human principal and Action authorization boundary")
+
+// SchedulerHTTPAuthorizationBoundary is the host's explicit mount-time
+// attestation. A private SaaS machine credential cannot satisfy this contract.
+// The host must authenticate a human principal, authorize the exact Action
+// permission, and enforce required reason/confirmation/idempotency evidence
+// before calling the Scheduler adapter.
+type SchedulerHTTPAuthorizationBoundary struct {
+	TrustedHumanPrincipal  bool
+	ActionPermissionGuard  bool
+	OperationEvidenceGuard bool
+}
+
+func (b SchedulerHTTPAuthorizationBoundary) Validate() error {
+	if !b.TrustedHumanPrincipal || !b.ActionPermissionGuard || !b.OperationEvidenceGuard {
+		return ErrSchedulerHTTPAuthorizationBoundaryRequired
+	}
+	return nil
+}
 
 const SchedulerAuthorizationOwner = "module:scheduler"
 
@@ -48,10 +69,42 @@ type HTTPAdapterContract struct {
 	OpenAPI         map[string]map[string]any `json:"openapi_operations"`
 }
 
-// SchedulerHTTPAdapterContract is the source-owned Scheduler service surface.
-// Definition, clock, run, retry, cancel and dead-letter requests enter through
-// Scheduler in both Module and SaaS topologies; Runtime must not republish it.
+// SchedulerHTTPAdapterContract is retained for source compatibility and fails
+// closed. Call SchedulerHTTPAdapterContractForTrustedHost only at a Runtime HTTP
+// composition point that actually installs the declared guards.
 func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
+	return HTTPAdapterContract{}, ErrSchedulerHTTPAuthorizationBoundaryRequired
+}
+
+// SchedulerHTTPAdapterContractForTrustedHost returns the source-owned Scheduler
+// Action surface for a guarded Runtime listener. Standalone SaaS private
+// protocol servers must not mount these /scheduler routes.
+func SchedulerHTTPAdapterContractForTrustedHost(boundary SchedulerHTTPAuthorizationBoundary) (HTTPAdapterContract, error) {
+	if err := boundary.Validate(); err != nil {
+		return HTTPAdapterContract{}, err
+	}
+	contract, err := schedulerHTTPAdapterContract()
+	if err != nil {
+		return HTTPAdapterContract{}, err
+	}
+	for _, operation := range contract.OpenAPI {
+		operation["x-domainry-host-authorization-boundary"] = "trusted_human_principal+action_permission+operation_evidence"
+	}
+	return contract, nil
+}
+
+// SchedulerHTTPOpenAPIOperations publishes source-owned interface metadata for
+// capability discovery without attesting to a running host's authorization.
+// It does not mount routes or replace SchedulerHTTPAdapterContractForTrustedHost.
+func SchedulerHTTPOpenAPIOperations() (map[string]map[string]any, error) {
+	contract, err := schedulerHTTPAdapterContract()
+	if err != nil {
+		return nil, err
+	}
+	return contract.OpenAPI, nil
+}
+
+func schedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 	definitions := schedulerDefinitionHTTPSchema()
 	authoringContract := objectSchema(map[string]any{
 		"resource_type": map[string]any{"type": "string"}, "status_field": map[string]any{"type": "string"}, "allowed_statuses": arraySchema(map[string]any{"type": "string"}),
@@ -81,14 +134,14 @@ func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 		ActionSchedulerDefinitionsSimulate: schedulerOperation("simulateSchedulerDefinition", "Simulate one published Scheduler definition without durable effects", []any{pathParameter("definitionID")}, nil, simulation),
 		ActionSchedulerStateGet: schedulerOperation("getSchedulerOperationsState", "Inspect Scheduler-owned run and dead-letter state", nil, nil,
 			objectSchema(map[string]any{"provisioned": map[string]any{"type": "boolean"}, "runs": arraySchema(run), "dead_letters": arraySchema(deadLetter)}, "provisioned", "runs", "dead_letters")),
-		ActionSchedulerDefinitionsRun: schedulerOperation("runSchedulerDefinition", "Trigger one Scheduler definition now", commandParameters("definitionID"), nil, run),
-		ActionSchedulerDefinitionsReschedule: schedulerOperation("rescheduleSchedulerDefinition", "Move the next run time of one Scheduler definition", commandParameters("definitionID"),
+		ActionSchedulerDefinitionsRun: schedulerOperation("runSchedulerDefinition", "Trigger one Scheduler definition using Scheduler's real UTC clock", []any{pathParameter("definitionID")}, nil, run),
+		ActionSchedulerDefinitionsReschedule: schedulerOperation("rescheduleSchedulerDefinition", "Move the next run time of one Scheduler definition", []any{pathParameter("definitionID")},
 			objectSchema(map[string]any{"next_run_at": map[string]any{"type": "string", "format": "date-time"}}, "next_run_at"),
 			objectSchema(map[string]any{"status": map[string]any{"type": "string"}, "definition_key": map[string]any{"type": "string"}, "next_run_at": map[string]any{"type": "string", "format": "date-time"}}, "status", "definition_key", "next_run_at")),
-		ActionSchedulerRunsRetry:          schedulerOperation("retrySchedulerRun", "Retry one Scheduler run", commandParameters("runID"), nil, run),
-		ActionSchedulerRunsCancel:         schedulerOperation("cancelSchedulerRun", "Cancel one Scheduler run", commandParameters("runID"), nil, run),
-		ActionSchedulerDeadLettersResolve: schedulerOptionalRequestOperation("resolveSchedulerDeadLetter", "Resolve one Scheduler dead letter", commandParameters("deadLetterID"), note, deadLetter),
-		ActionSchedulerDeadLettersRequeue: schedulerOptionalRequestOperation("requeueSchedulerDeadLetter", "Requeue one Scheduler dead letter", commandParameters("deadLetterID"), note, run),
+		ActionSchedulerRunsRetry:          schedulerOperation("retrySchedulerRun", "Retry one Scheduler run", []any{pathParameter("runID")}, nil, run),
+		ActionSchedulerRunsCancel:         schedulerOperation("cancelSchedulerRun", "Cancel one Scheduler run", []any{pathParameter("runID")}, nil, run),
+		ActionSchedulerDeadLettersResolve: schedulerOptionalRequestOperation("resolveSchedulerDeadLetter", "Resolve one Scheduler dead letter", []any{pathParameter("deadLetterID")}, note, deadLetter),
+		ActionSchedulerDeadLettersRequeue: schedulerOptionalRequestOperation("requeueSchedulerDeadLetter", "Requeue one Scheduler dead letter", []any{pathParameter("deadLetterID")}, note, run),
 	}
 	routes := make([]HTTPRouteContract, 0, len(actions))
 	operations := make(map[string]map[string]any, len(actions))
@@ -96,6 +149,9 @@ func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 		operation, found := operationsByAction[action.Key]
 		if !found {
 			return HTTPAdapterContract{}, fmt.Errorf("Scheduler Action %q has no OpenAPI operation", action.Key)
+		}
+		if err := applySchedulerOperationPrerequisites(operation, action); err != nil {
+			return HTTPAdapterContract{}, err
 		}
 		route := HTTPRouteContract{Action: action}
 		routes = append(routes, route)
@@ -105,7 +161,7 @@ func SchedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 	if len(operationsByAction) != 0 {
 		return HTTPAdapterContract{}, fmt.Errorf("Scheduler OpenAPI operations have no Action manifest entries")
 	}
-	return HTTPAdapterContract{ContractVersion: SchedulerHTTPAdapterContractVersion, Owner: "scheduler", Name: "scheduler_external", Routes: routes, OpenAPI: operations}, nil
+	return HTTPAdapterContract{ContractVersion: SchedulerHTTPAdapterContractVersion, Owner: "scheduler", Name: "scheduler_guarded_runtime", Routes: routes, OpenAPI: operations}, nil
 }
 
 func SchedulerAuthorizationActions() ([]actioncontract.ActionDefinition, error) {
@@ -184,8 +240,77 @@ func pathParameter(name string) map[string]any {
 	return map[string]any{"name": name, "in": "path", "required": true, "schema": map[string]any{"type": "string", "minLength": 1}}
 }
 
-func commandParameters(resource string) []any {
-	return []any{pathParameter(resource), map[string]any{"name": "Idempotency-Key", "in": "header", "required": true, "schema": map[string]any{"type": "string", "minLength": 1}}}
+func applySchedulerOperationPrerequisites(operation map[string]any, action actioncontract.ActionDefinition) error {
+	if operation == nil {
+		return fmt.Errorf("Scheduler Action %q has no OpenAPI operation", action.Key)
+	}
+	parameters, err := schedulerOperationParameters(operation, action.Key)
+	if err != nil {
+		return err
+	}
+	// Keep transport prerequisites as a deterministic projection of the
+	// normalized Action instead of maintaining a second per-operation table.
+	if action.IdempotencyDecision == "caller_key_required" {
+		parameters = append(parameters, requiredSchedulerHeaderParameter(
+			"Idempotency-Key",
+			"Stable caller-supplied key for one logical operation and all of its retries",
+			map[string]any{"type": "string", "minLength": 1},
+			"",
+		))
+	}
+	if schedulerActionHasApprovalPolicy(action, actioncontract.ApprovalReason) {
+		parameters = append(parameters, requiredSchedulerHeaderParameter(
+			"X-Operation-Reason",
+			"Human-supplied auditable reason for this governed Scheduler operation",
+			map[string]any{"type": "string", "minLength": 1, "pattern": `\S`},
+			"Approved Scheduler operation for the stated business purpose",
+		))
+	}
+	if schedulerActionHasApprovalPolicy(action, actioncontract.ApprovalConfirmation) {
+		parameters = append(parameters, requiredSchedulerHeaderParameter(
+			"X-Operation-Confirmation",
+			"Explicit confirmation required by the Scheduler Action contract",
+			map[string]any{"type": "string", "enum": []string{"confirmed"}},
+			"confirmed",
+		))
+	}
+	if len(parameters) == 0 {
+		delete(operation, "parameters")
+		return nil
+	}
+	operation["parameters"] = parameters
+	return nil
+}
+
+func schedulerOperationParameters(operation map[string]any, actionKey string) ([]any, error) {
+	values, found := operation["parameters"]
+	if !found {
+		return nil, nil
+	}
+	parameters, ok := values.([]any)
+	if !ok {
+		return nil, fmt.Errorf("Scheduler Action %q OpenAPI parameters are invalid", actionKey)
+	}
+	return append([]any(nil), parameters...), nil
+}
+
+func requiredSchedulerHeaderParameter(name, description string, schema map[string]any, example string) map[string]any {
+	parameter := map[string]any{
+		"name": name, "in": "header", "required": true, "description": description, "schema": schema,
+	}
+	if example != "" {
+		parameter["example"] = example
+	}
+	return parameter
+}
+
+func schedulerActionHasApprovalPolicy(action actioncontract.ActionDefinition, wanted actioncontract.ApprovalPolicy) bool {
+	for _, policy := range action.ApprovalPolicies {
+		if policy == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func objectSchema(properties map[string]any, required ...string) map[string]any {
@@ -203,9 +328,10 @@ func arraySchema(items map[string]any) map[string]any {
 func schedulerRunHTTPSchema() map[string]any {
 	return objectSchema(map[string]any{
 		"id": map[string]any{"type": "string"}, "definition_key": map[string]any{"type": "string"}, "status": map[string]any{"type": "string"}, "attempt": map[string]any{"type": "integer"},
-		"scheduled_for": map[string]any{"type": "string", "format": "date-time"}, "error_message": map[string]any{"type": "string"}, "lease_owner": map[string]any{"type": "string"},
+		"scheduled_for": map[string]any{"type": "string", "format": "date-time"}, "window_key": map[string]any{"type": "string"}, "error_message": map[string]any{"type": "string"}, "lease_owner": map[string]any{"type": "string"},
 		"lease_expires_at": map[string]any{"type": "string", "format": "date-time"}, "fencing_token": map[string]any{"type": "integer"}, "correlation_id": map[string]any{"type": "string"},
-		"created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+		"downstream_receipt": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "owner": map[string]any{"type": "string"}, "status": map[string]any{"type": "string"}, "replay": map[string]any{"type": "boolean"}}, "id", "status"),
+		"created_at":         map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
 	}, "id", "status")
 }
 

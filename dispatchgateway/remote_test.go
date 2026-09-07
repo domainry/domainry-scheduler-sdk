@@ -1,45 +1,125 @@
 package dispatchgateway
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
-func TestRemoteDispatchAuthenticatesAndValidatesReceipt(t *testing.T) {
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
+
+func TestRemoteDispatchAuthenticatesEveryCallbackDimensionAndRetries(t *testing.T) {
 	var calls int
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		calls++
 		body, _ := io.ReadAll(request.Body)
 		signature := Signature{
-			ClientID: request.Header.Get(ClientIDHeader), Timestamp: request.Header.Get(TimestampHeader), Value: request.Header.Get(SignatureHeader),
+			Version: request.Header.Get(SignatureVersionHeader), ClientID: request.Header.Get(ClientIDHeader),
+			Timestamp: request.Header.Get(TimestampHeader), Value: request.Header.Get(SignatureHeader),
 		}
-		if request.URL.Path != AcceptPath || request.Header.Get("X-Domainry-Runtime-ID") != "runtime-a" || request.Header.Get("X-Domainry-Service-Credential") != "" ||
-			Verify(body, "run-1", signature, []byte("secret"), time.Now().UTC()) != nil {
-			http.Error(response, "bad request", http.StatusBadRequest)
-			return
+		signed := SignedRequest{Method: request.Method, Path: request.URL.Path, RuntimeID: request.Header.Get(RuntimeIDHeader), IdempotencyKey: "command-1"}
+		if request.URL.Path != AcceptPath || signed.RuntimeID != "runtime-a" || request.Header.Get("X-Domainry-Service-Credential") != "" ||
+			VerifyRequest(body, signed, signature, []byte("secret"), time.Now().UTC()) != nil {
+			t.Fatal("remote callback omitted a v2 signed request dimension")
 		}
-		request.Body = io.NopCloser(bytes.NewReader(body))
 		if calls == 1 {
-			http.Error(response, "retry", http.StatusServiceUnavailable)
-			return
+			return callbackHTTPResponse(http.StatusServiceUnavailable, `{"code":"dispatch.temporarily_unavailable"}`), nil
 		}
-		_ = json.NewEncoder(response).Encode(Receipt{ExecutionID: "run-1", ID: "receipt-1", Owner: "workflow", Status: "accepted"})
-	}))
-	defer server.Close()
-	remote, err := NewRemote(RemoteConfig{BaseURL: server.URL, SigningSecret: "secret", HTTPClient: server.Client(), MaxAttempts: 2})
+		payload, _ := json.Marshal(Receipt{ExecutionID: "run-1", ID: "receipt-1", Owner: "workflow", Status: "accepted"})
+		return callbackHTTPResponse(http.StatusOK, string(payload)), nil
+	})}
+	remote, err := NewRemote(RemoteConfig{BaseURL: "https://runtime.example", RuntimeID: "runtime-a", SigningSecret: "secret", HTTPClient: client, MaxAttempts: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	target := schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start", Payload: json.RawMessage(`{}`)}
-	receipt, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: target})
+	receipt, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "command-1", Target: target})
 	if err != nil || receipt.ID != "receipt-1" || calls != 2 {
 		t.Fatalf("receipt=%#v calls=%d err=%v", receipt, calls, err)
 	}
+}
+
+func TestRemoteCredentialCannotDispatchForAnotherRuntime(t *testing.T) {
+	var calls int
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return callbackHTTPResponse(http.StatusOK, `{}`), nil
+	})}
+	remote, err := NewRemote(RemoteConfig{BaseURL: "https://runtime.example", RuntimeID: "runtime-a", SigningSecret: "secret", HTTPClient: client, MaxAttempts: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{RuntimeID: "runtime-b", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	_, err = remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-b"}, request)
+	if !errors.Is(err, ErrCallbackAuthentication) || calls != 0 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestRemoteClassifiesCallbackErrorsWithoutDisclosingBody(t *testing.T) {
+	for _, test := range []struct {
+		status int
+		want   error
+	}{
+		{status: http.StatusBadRequest, want: ErrCallbackRequestInvalid},
+		{status: http.StatusUnauthorized, want: ErrCallbackAuthentication},
+		{status: http.StatusForbidden, want: ErrCallbackRejected},
+		{status: http.StatusConflict, want: ErrCallbackIdempotencyConflict},
+		{status: http.StatusTooManyRequests, want: ErrCallbackRetryable},
+		{status: http.StatusInternalServerError, want: ErrCallbackRetryable},
+	} {
+		t.Run(http.StatusText(test.status), func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return callbackHTTPResponse(test.status, `{"code":"dispatch.safe_code","secret":"must-not-leak"}`), nil
+			})}
+			remote, err := NewRemote(RemoteConfig{BaseURL: "https://runtime.example", RuntimeID: "runtime-a", SigningSecret: "secret", HTTPClient: client, MaxAttempts: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+			_, err = remote.Dispatch(context.Background(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request)
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "must-not-leak") {
+				t.Fatalf("status=%d err=%v", test.status, err)
+			}
+		})
+	}
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return callbackHTTPResponse(http.StatusForbidden, `{"code":"must not leak spaces","secret":"must-not-leak"}`), nil
+	})}
+	remote, err := NewRemote(RemoteConfig{BaseURL: "https://runtime.example", RuntimeID: "runtime-a", SigningSecret: "secret", HTTPClient: client, MaxAttempts: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	_, err = remote.Dispatch(context.Background(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request)
+	if err == nil || strings.Contains(err.Error(), "must not leak") {
+		t.Fatalf("unsafe callback error=%v", err)
+	}
+}
+
+func TestRemoteRejectsOversizedSuccessfulResponse(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return callbackHTTPResponse(http.StatusOK, strings.Repeat(" ", int(maxCallbackResponseBytes)+1)), nil
+	})}
+	remote, err := NewRemote(RemoteConfig{BaseURL: "https://runtime.example", RuntimeID: "runtime-a", SigningSecret: "secret", HTTPClient: client, MaxAttempts: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	if _, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request); !errors.Is(err, ErrCallbackResponseInvalid) {
+		t.Fatalf("oversized response err=%v", err)
+	}
+}
+
+func callbackHTTPResponse(status int, body string) *http.Response {
+	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }

@@ -5,8 +5,12 @@ package schedulersdk
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,9 +20,18 @@ import (
 type DeploymentMode string
 
 const (
-	DeploymentModeModule DeploymentMode = "module"
-	DeploymentModeSaaS   DeploymentMode = "saas"
-	ProtocolVersionV1                   = "domainry-scheduler-protocol-v1"
+	DeploymentModeModule                   DeploymentMode = "module"
+	DeploymentModeSaaS                     DeploymentMode = "saas"
+	ProtocolVersionV1                                     = "domainry-scheduler-protocol-v1"
+	CapabilityDefinitionPublicationFencing                = "definition_publication_fencing_v1"
+)
+
+var (
+	ErrDefinitionPublicationRequired           = errors.New("Scheduler definition publisher session is required")
+	ErrDefinitionPublicationCapabilityRequired = errors.New("Scheduler SaaS definition publication fencing capability is required")
+	ErrDefinitionPublicationSessionMismatch    = errors.New("Scheduler definition publisher session does not match the active session")
+	ErrDefinitionSnapshotStale                 = errors.New("Scheduler definition snapshot is stale")
+	ErrDefinitionSnapshotConflict              = errors.New("Scheduler definition snapshot conflicts with accepted content")
 )
 
 type ApplicationRef struct {
@@ -46,6 +59,19 @@ func (d Descriptor) Validate() error {
 		return fmt.Errorf("invalid Scheduler deployment mode %q", d.Mode)
 	}
 	return nil
+}
+
+func (d Descriptor) Supports(capability string) bool {
+	wanted := strings.TrimSpace(capability)
+	if wanted == "" {
+		return false
+	}
+	for _, candidate := range d.Capabilities {
+		if strings.TrimSpace(candidate) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 type Schedule struct {
@@ -130,9 +156,213 @@ func (d Definition) Normalize() Definition {
 	return d
 }
 
+const DefinitionPublicationContractVersion = "domainry-scheduler-definition-publication-v1"
+
+// DefinitionPublisherSession is a Scheduler-issued, application-scoped fence.
+// Scheduler allocates Generation monotonically and persists the active nonce
+// hash before returning the raw nonce. A Runtime process obtains one session for
+// its remote binding lifetime; reconnecting obtains a strictly greater
+// generation. Session identity is never an application selector: the
+// authenticated ApplicationRef remains authoritative.
+type DefinitionPublisherSession struct {
+	ContractVersion string `json:"contract_version"`
+	Generation      uint64 `json:"generation"`
+	SessionNonce    string `json:"session_nonce"`
+}
+
+func (s DefinitionPublisherSession) Validate() error {
+	if s.ContractVersion != DefinitionPublicationContractVersion ||
+		strings.TrimSpace(s.SessionNonce) == "" || strings.TrimSpace(s.SessionNonce) != s.SessionNonce ||
+		len(s.SessionNonce) < 32 || len(s.SessionNonce) > 512 || s.Generation == 0 {
+		return ErrDefinitionPublicationRequired
+	}
+	return nil
+}
+
+// DefinitionPublisherFence is the only session material Scheduler persists.
+// SessionNonce must be discarded after deriving SessionSHA256.
+type DefinitionPublisherFence struct {
+	ContractVersion string `json:"contract_version"`
+	Generation      uint64 `json:"generation"`
+	SessionSHA256   string `json:"session_sha256"`
+}
+
+func (s DefinitionPublisherSession) PublisherFence() (DefinitionPublisherFence, error) {
+	if err := s.Validate(); err != nil {
+		return DefinitionPublisherFence{}, err
+	}
+	digest := sha256.Sum256([]byte(s.SessionNonce))
+	return DefinitionPublisherFence{ContractVersion: DefinitionPublicationContractVersion, Generation: s.Generation, SessionSHA256: fmt.Sprintf("%x", digest[:])}, nil
+}
+
+func (f DefinitionPublisherFence) Validate() error {
+	if f.ContractVersion != DefinitionPublicationContractVersion || f.Generation == 0 || !validSHA256(f.SessionSHA256) {
+		return ErrDefinitionPublicationRequired
+	}
+	return nil
+}
+
+func (f DefinitionPublisherFence) Equal(other DefinitionPublisherFence) bool {
+	return f.ContractVersion == other.ContractVersion &&
+		f.Generation == other.Generation &&
+		len(f.SessionSHA256) == len(other.SessionSHA256) &&
+		subtle.ConstantTimeCompare([]byte(f.SessionSHA256), []byte(other.SessionSHA256)) == 1
+}
+
 type DefinitionSnapshot struct {
-	Revision    int64        `json:"revision"`
-	Definitions []Definition `json:"definitions"`
+	// PublisherSession is additive for v1 wire compatibility. A nil value is a
+	// legacy snapshot and may be used only before a Scheduler store is migrated
+	// to fenced publication. Once the first session is issued, legacy snapshots
+	// must fail closed rather than fall back to process-local Revision ordering.
+	PublisherSession *DefinitionPublisherSession `json:"publisher_session,omitempty"`
+	Revision         int64                       `json:"revision"`
+	Definitions      []Definition                `json:"definitions"`
+}
+
+type DefinitionSnapshotCursor struct {
+	Application    ApplicationRef           `json:"application"`
+	PublisherFence DefinitionPublisherFence `json:"publisher_fence"`
+	Revision       int64                    `json:"revision"`
+	ContentSHA256  string                   `json:"content_sha256"`
+}
+
+type DefinitionSnapshotDisposition string
+
+const (
+	DefinitionSnapshotApply  DefinitionSnapshotDisposition = "apply"
+	DefinitionSnapshotReplay DefinitionSnapshotDisposition = "replay"
+)
+
+// EvaluateDefinitionSnapshot is the shared fenced ordering contract. The
+// caller supplies the Scheduler-persisted active fence for the authenticated
+// application and must update snapshot rows and the returned cursor in one
+// transaction when disposition is apply. Exact retries are replays; a different
+// payload at the same revision is a conflict. A greater active fence admits a
+// revision reset after Runtime restart, while every older session stays stale.
+func EvaluateDefinitionSnapshot(application ApplicationRef, active DefinitionPublisherFence, current *DefinitionSnapshotCursor, incoming DefinitionSnapshot) (DefinitionSnapshotCursor, DefinitionSnapshotDisposition, error) {
+	if err := application.Validate(); err != nil {
+		return DefinitionSnapshotCursor{}, "", err
+	}
+	application.RuntimeID = strings.TrimSpace(application.RuntimeID)
+	if err := active.Validate(); err != nil {
+		return DefinitionSnapshotCursor{}, "", err
+	}
+	if incoming.PublisherSession == nil {
+		return DefinitionSnapshotCursor{}, "", ErrDefinitionPublicationRequired
+	}
+	session := *incoming.PublisherSession
+	fence, err := session.PublisherFence()
+	if err != nil {
+		return DefinitionSnapshotCursor{}, "", err
+	}
+	if incoming.Revision <= 0 {
+		return DefinitionSnapshotCursor{}, "", fmt.Errorf("%w: revision must be positive", ErrDefinitionSnapshotConflict)
+	}
+	digest, err := DefinitionSnapshotContentSHA256(incoming.Definitions)
+	if err != nil {
+		return DefinitionSnapshotCursor{}, "", err
+	}
+	next := DefinitionSnapshotCursor{Application: application, PublisherFence: fence, Revision: incoming.Revision, ContentSHA256: digest}
+	if current != nil {
+		if err := current.Validate(); err != nil {
+			return DefinitionSnapshotCursor{}, "", fmt.Errorf("current Scheduler definition snapshot cursor: %w", err)
+		}
+		if strings.TrimSpace(current.Application.RuntimeID) != strings.TrimSpace(application.RuntimeID) {
+			return DefinitionSnapshotCursor{}, "", ErrDefinitionPublicationSessionMismatch
+		}
+		if fence.Generation < current.PublisherFence.Generation {
+			return DefinitionSnapshotCursor{}, "", ErrDefinitionSnapshotStale
+		}
+	}
+	if !fence.Equal(active) {
+		if fence.Generation < active.Generation {
+			return DefinitionSnapshotCursor{}, "", ErrDefinitionSnapshotStale
+		}
+		return DefinitionSnapshotCursor{}, "", ErrDefinitionPublicationSessionMismatch
+	}
+	if current == nil || fence.Generation > current.PublisherFence.Generation {
+		return next, DefinitionSnapshotApply, nil
+	}
+	if !fence.Equal(current.PublisherFence) {
+		return DefinitionSnapshotCursor{}, "", ErrDefinitionSnapshotConflict
+	}
+	if incoming.Revision < current.Revision {
+		return DefinitionSnapshotCursor{}, "", ErrDefinitionSnapshotStale
+	}
+	if incoming.Revision == current.Revision {
+		if digest != current.ContentSHA256 {
+			return DefinitionSnapshotCursor{}, "", ErrDefinitionSnapshotConflict
+		}
+		return *current, DefinitionSnapshotReplay, nil
+	}
+	return next, DefinitionSnapshotApply, nil
+}
+
+func (c DefinitionSnapshotCursor) Validate() error {
+	if err := c.Application.Validate(); err != nil {
+		return err
+	}
+	if err := c.PublisherFence.Validate(); err != nil {
+		return err
+	}
+	if c.Revision <= 0 || !validSHA256(c.ContentSHA256) {
+		return ErrDefinitionSnapshotConflict
+	}
+	return nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
+}
+
+// DefinitionSnapshotContentSHA256 hashes the normalized definition set in key
+// order, so transport ordering cannot create a false same-revision conflict.
+func DefinitionSnapshotContentSHA256(definitions []Definition) (string, error) {
+	canonical := make([]Definition, len(definitions))
+	copy(canonical, definitions)
+	seen := make(map[string]struct{}, len(canonical))
+	for index := range canonical {
+		canonical[index] = canonical[index].Normalize()
+		if err := canonical[index].Validate(); err != nil {
+			return "", err
+		}
+		key := strings.TrimSpace(canonical[index].Key)
+		if _, exists := seen[key]; exists {
+			return "", fmt.Errorf("Scheduler definition snapshot repeats %q", key)
+		}
+		seen[key] = struct{}{}
+	}
+	sort.Slice(canonical, func(i, j int) bool { return canonical[i].Key < canonical[j].Key })
+	raw, err := json.Marshal(canonical)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(raw)
+	return fmt.Sprintf("%x", digest[:]), nil
+}
+
+// ValidateModuleDefinitionSnapshot validates an in-process Module publication
+// without applying SaaS session fencing. Module Reconcile calls are serialized
+// by the binding and Revision is local to that Runtime process; after a process
+// restart revision 1 is valid and must not be compared with the prior process's
+// counter. Durable definition revisions and content remain authoritative.
+func ValidateModuleDefinitionSnapshot(snapshot DefinitionSnapshot) error {
+	if snapshot.PublisherSession != nil {
+		return fmt.Errorf("module Scheduler definition snapshots must not carry a SaaS publisher session")
+	}
+	if snapshot.Revision <= 0 {
+		return fmt.Errorf("Scheduler definition snapshot revision must be positive")
+	}
+	_, err := DefinitionSnapshotContentSHA256(snapshot.Definitions)
+	return err
 }
 
 type Trigger struct {
