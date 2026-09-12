@@ -93,6 +93,14 @@ type RunStore interface {
 	Reschedule(context.Context, string, time.Time, string) error
 }
 
+// TriggerBacklogStore is an optional Scheduler persistence capability. Its
+// implementation must serialize the limit check with new trigger claims in the
+// database; an in-process counter is insufficient for multi-instance workers.
+type TriggerBacklogStore interface {
+	ConfigureTriggerBacklogLimit(int) error
+	TriggerBacklog(context.Context) (schedulersdk.TriggerBacklog, error)
+}
+
 type Dispatcher interface {
 	Dispatch(context.Context, schedulersdk.Trigger) (schedulersdk.DownstreamReceipt, error)
 }

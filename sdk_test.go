@@ -190,9 +190,13 @@ func snapshotDefinition(revision, operation string) Definition {
 }
 
 func TestWorkerConfigIsBounded(t *testing.T) {
-	config := NormalizeWorkerConfig(WorkerConfig{BatchSize: 501})
-	if config.PollInterval != 500*time.Millisecond || config.BatchSize != 500 || config.LeaseTTL != 5*time.Minute {
+	config := NormalizeWorkerConfig(WorkerConfig{BatchSize: 501, MaxPendingTriggers: 1_000_001, DispatchTimeout: time.Hour})
+	if config.PollInterval != 500*time.Millisecond || config.BatchSize != 500 || config.LeaseTTL != 5*time.Minute || config.MaxPendingTriggers != 1_000_000 || config.DispatchTimeout != 30*time.Minute {
 		t.Fatalf("unexpected normalized config: %#v", config)
+	}
+	defaults := NormalizeWorkerConfig(WorkerConfig{})
+	if defaults.MaxPendingTriggers != 10_000 || defaults.DispatchTimeout != 5*time.Minute {
+		t.Fatalf("unexpected worker capacity defaults: %#v", defaults)
 	}
 }
 

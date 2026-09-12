@@ -25,6 +25,7 @@ const (
 	ProtocolVersionV1                                     = "domainry-scheduler-protocol-v1"
 	CapabilityDefinitionPublicationFencing                = "definition_publication_fencing_v1"
 	CapabilityScheduledPlanRecords                        = "scheduled_plan_records_v1"
+	CapabilityTriggerBacklog                              = "trigger_backlog_v1"
 )
 
 var (
@@ -33,6 +34,7 @@ var (
 	ErrDefinitionPublicationSessionMismatch    = errors.New("Scheduler definition publisher session does not match the active session")
 	ErrDefinitionSnapshotStale                 = errors.New("Scheduler definition snapshot is stale")
 	ErrDefinitionSnapshotConflict              = errors.New("Scheduler definition snapshot conflicts with accepted content")
+	ErrTriggerBacklogFull                      = errors.New("Scheduler trigger backlog is full")
 )
 
 type ApplicationRef struct {
@@ -436,11 +438,26 @@ type DeadLetter struct {
 	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
 }
 
+// TriggerBacklog is the Scheduler-owned count of durable triggers that are
+// leased or waiting for retry. Downstream business work is counted by its own
+// owner and is deliberately outside this projection.
+type TriggerBacklog struct {
+	Pending int `json:"pending"`
+	Limit   int `json:"limit"`
+}
+
+// TriggerBacklogProvider is optional so older hosts keep source compatibility.
+type TriggerBacklogProvider interface {
+	TriggerBacklog(context.Context) (TriggerBacklog, error)
+}
+
 type WorkerConfig struct {
-	Enabled      bool          `json:"enabled"`
-	PollInterval time.Duration `json:"poll_interval"`
-	BatchSize    int           `json:"batch_size"`
-	LeaseTTL     time.Duration `json:"lease_ttl"`
+	Enabled            bool          `json:"enabled"`
+	PollInterval       time.Duration `json:"poll_interval"`
+	BatchSize          int           `json:"batch_size"`
+	LeaseTTL           time.Duration `json:"lease_ttl"`
+	MaxPendingTriggers int           `json:"max_pending_triggers"`
+	DispatchTimeout    time.Duration `json:"dispatch_timeout"`
 }
 
 func NormalizeWorkerConfig(config WorkerConfig) WorkerConfig {
@@ -455,6 +472,18 @@ func NormalizeWorkerConfig(config WorkerConfig) WorkerConfig {
 	}
 	if config.LeaseTTL <= 0 {
 		config.LeaseTTL = 5 * time.Minute
+	}
+	if config.MaxPendingTriggers <= 0 {
+		config.MaxPendingTriggers = 10_000
+	}
+	if config.MaxPendingTriggers > 1_000_000 {
+		config.MaxPendingTriggers = 1_000_000
+	}
+	if config.DispatchTimeout <= 0 {
+		config.DispatchTimeout = 5 * time.Minute
+	}
+	if config.DispatchTimeout > 30*time.Minute {
+		config.DispatchTimeout = 30 * time.Minute
 	}
 	return config
 }
