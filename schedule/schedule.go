@@ -35,6 +35,10 @@ func NextSchedule(value schedulersdk.Schedule, now time.Time) time.Time {
 func Validate(value schedulersdk.Schedule) error {
 	data := Data(value)
 	switch Type(data) {
+	case "once":
+		if _, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value.Expression)); err != nil {
+			return fmt.Errorf("scheduler one-time instant is invalid")
+		}
 	case "interval":
 		if IntervalSeconds(data) <= 0 {
 			return fmt.Errorf("scheduler interval must be positive")
@@ -93,6 +97,9 @@ func Next(data map[string]any, now time.Time) time.Time {
 	loc := location(data)
 	localNow := now.In(loc)
 	switch Type(data) {
+	case "once":
+		value, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(data["schedule_expression"])))
+		return value.UTC()
 	case "interval":
 		seconds := IntervalSeconds(data)
 		if seconds <= 0 {
@@ -127,7 +134,7 @@ func Next(data map[string]any, now time.Time) time.Time {
 func Type(data map[string]any) string {
 	raw := strings.ToLower(strings.TrimSpace(fmt.Sprint(data["schedule_type"])))
 	switch raw {
-	case "interval", "daily_at", "weekly_at", "monthly_at", "cron":
+	case "once", "interval", "daily_at", "weekly_at", "monthly_at", "cron":
 		return raw
 	}
 	expression := strings.ToLower(strings.TrimSpace(fmt.Sprint(data["schedule_expression"])))

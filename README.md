@@ -3,6 +3,7 @@
 This repository contains the deployment-neutral Scheduler protocol:
 
 - Go contracts for definitions, schedules, triggers, receipts, Module hosts and SaaS transports.
+- Owner-scoped scheduled plan records for one-time and recurring product work.
 - `schedule` for deterministic authoring validation, recurrence planning and window keys shared by Module, SaaS and Runtime compatibility paths.
 - `saashost/httptransport` for authenticated Runtime-to-SaaS communication.
 - `dispatchgateway` for HMAC-signed Scheduler-service-to-Runtime target execution.
@@ -34,6 +35,20 @@ trusted human-principal authenticator, exact Action-permission guard, and the
 declared operation-evidence guards are installed. The legacy no-argument
 contract function fails closed. Ordinary definition execution remains
 `Binding.TriggerNow`; callers cannot supply `scheduled_for` or a global clock.
+
+Products create plan records through the optional `ScheduledPlanService`
+extension after resolving the current workspace and user. Module and SaaS use
+the same DTO; the SaaS transport binds Runtime identity to its machine
+credential, while the plan command carries only the already-resolved product
+owner. A conversation reference is an association, not access authority.
+
+The plan trigger stores its execution policy. Omitted values are normalized by
+Scheduler: one-time work catches up once, recurring work skips missed windows,
+the grace period is one minute, and dispatch gets three attempts with bounded
+backoff. `catch_up_bounded` accepts 1–100 windows. Scheduler sends a signed
+`ScheduledPlanDispatch` payload containing the plan ID, resolved owner, input,
+allowed actions and conversation reference; the receiving product must
+reauthorize those facts before execution.
 
 ## Definition publication fencing
 

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulecapability/contracttest"
@@ -56,7 +57,7 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 		assertPrivateRequest(t, request)
 		_ = json.NewEncoder(response).Encode(schedulersdk.Descriptor{
 			ProtocolVersion: schedulersdk.ProtocolVersionV1, Mode: schedulersdk.DeploymentModeSaaS,
-			Capabilities: []string{schedulersdk.CapabilityDefinitionPublicationFencing},
+			Capabilities: []string{schedulersdk.CapabilityDefinitionPublicationFencing, schedulersdk.CapabilityScheduledPlanRecords},
 		})
 	})
 	mux.HandleFunc("POST /v1/applications/runtime-a/"+DefinitionPublisherSessionsResource, func(response http.ResponseWriter, request *http.Request) {
@@ -76,10 +77,39 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 		}
 		response.WriteHeader(http.StatusNoContent)
 	})
+	var saved schedulersdk.ScheduledPlan
+	mux.HandleFunc("POST /v1/applications/runtime-a/plans", func(response http.ResponseWriter, request *http.Request) {
+		applicationCalls++
+		assertPrivateRequest(t, request)
+		var input schedulersdk.ScheduledPlanCreate
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		saved = schedulersdk.ScheduledPlan{ID: "plan-a", Name: input.Name, Owner: input.Owner, Timezone: input.Timezone, Trigger: input.Trigger, Input: input.Input, AllowedActions: input.AllowedActions, Target: input.Target, ConversationRef: input.ConversationRef, Status: "enabled", Revision: 1}
+		_ = json.NewEncoder(response).Encode(schedulersdk.ScheduledPlanReceipt{Plan: saved})
+	})
+	mux.HandleFunc("GET /v1/applications/runtime-a/plans/plan-a", func(response http.ResponseWriter, request *http.Request) {
+		applicationCalls++
+		assertPrivateRequest(t, request)
+		if request.URL.Query().Get("workspace_id") != "workspace-a" || request.URL.Query().Get("user_id") != "user-a" || request.URL.Query().Get("product_key") != "agent" {
+			t.Fatalf("plan owner query=%s", request.URL.RawQuery)
+		}
+		_ = json.NewEncoder(response).Encode(saved)
+	})
 	client := &http.Client{Transport: handlerRoundTripper{handler: mux}}
 	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: client, CapabilityContractSHA256: summary.Identity.ContractSHA256})
 	if err != nil {
 		t.Fatal(err)
+	}
+	owner := schedulersdk.ScheduledPlanOwner{WorkspaceID: "workspace-a", UserID: "user-a", ProductKey: "agent"}
+	at := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)
+	receipt, err := transport.CreateScheduledPlan(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, schedulersdk.ScheduledPlanCreate{ClientID: "plan-a", Name: "Friday", Owner: owner, Timezone: "Asia/Shanghai", Trigger: schedulersdk.ScheduledPlanTrigger{Type: "once", At: &at}, Input: json.RawMessage(`{}`), Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "agent", Operation: "conversation_task_start"}})
+	if err != nil || receipt.Plan.ID != "plan-a" {
+		t.Fatalf("plan receipt=%+v err=%v", receipt, err)
+	}
+	loaded, err := transport.GetScheduledPlan(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, schedulersdk.ScheduledPlanLookup{Owner: owner, PlanID: "plan-a"})
+	if err != nil || loaded.ID != "plan-a" || loaded.Owner != owner {
+		t.Fatalf("loaded plan=%+v err=%v", loaded, err)
 	}
 	contracttest.VerifyBinding(t, transport)
 	if _, err := transport.Descriptor(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}); err != nil {
@@ -97,6 +127,36 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 	before := applicationCalls
 	if _, err := transport.Descriptor(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-b"}); !errors.Is(err, saashost.ErrApplicationBindingMismatch) || applicationCalls != before {
 		t.Fatalf("cross-Runtime request reached transport: calls=%d before=%d err=%v", applicationCalls, before, err)
+	}
+}
+
+func TestTransportMapsScheduledPlanErrorsWithoutCopyingResponseBody(t *testing.T) {
+	fixture, err := contracttest.NewFixtureBinding("scheduler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, _ := fixture.CapabilitySummary(t.Context())
+	capability, _ := modulecapability.NewHTTPHandler(fixture, func(*http.Request) error { return nil })
+	mux := http.NewServeMux()
+	mux.Handle(modulecapability.SummaryPath, capability)
+	mux.Handle(modulecapability.CategoriesPath, capability)
+	mux.Handle(modulecapability.ValidationPath, capability)
+	mux.HandleFunc("POST /v1/applications/runtime-a/plans", func(response http.ResponseWriter, _ *http.Request) {
+		http.Error(response, "private database detail", http.StatusConflict)
+	})
+	mux.HandleFunc("GET /v1/applications/runtime-a/plans/missing", func(response http.ResponseWriter, _ *http.Request) {
+		http.Error(response, "private database detail", http.StatusNotFound)
+	})
+	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: &http.Client{Transport: handlerRoundTripper{handler: mux}}, CapabilityContractSHA256: summary.Identity.ContractSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}
+	if _, err := transport.CreateScheduledPlan(t.Context(), application, schedulersdk.ScheduledPlanCreate{}); !errors.Is(err, schedulersdk.ErrScheduledPlanConflict) || strings.Contains(err.Error(), "database") {
+		t.Fatalf("create conflict err=%v", err)
+	}
+	if _, err := transport.GetScheduledPlan(t.Context(), application, schedulersdk.ScheduledPlanLookup{PlanID: "missing"}); !errors.Is(err, schedulersdk.ErrScheduledPlanNotFound) || strings.Contains(err.Error(), "database") {
+		t.Fatalf("get missing err=%v", err)
 	}
 }
 

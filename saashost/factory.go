@@ -43,6 +43,19 @@ type DefinitionPublicationTransport interface {
 	BeginDefinitionPublisherSession(context.Context, schedulersdk.ApplicationRef) (schedulersdk.DefinitionPublisherSession, error)
 }
 
+// ScheduledPlanTransport is the optional private SaaS protocol for product-
+// resolved plan records. Application identity remains bound by the transport;
+// owner identity is carried in the validated Scheduler command.
+type ScheduledPlanTransport interface {
+	CreateScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanCreate) (schedulersdk.ScheduledPlanReceipt, error)
+	GetScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanLookup) (schedulersdk.ScheduledPlan, error)
+	ListScheduledPlans(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanList) (schedulersdk.ScheduledPlanPage, error)
+	UpdateScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanUpdate) (schedulersdk.ScheduledPlanReceipt, error)
+	PauseScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanReceipt, error)
+	ResumeScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanReceipt, error)
+	DeleteScheduledPlan(context.Context, schedulersdk.ApplicationRef, schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanDeleteReceipt, error)
+}
+
 // ApplicationBindingTransport lets a remote Factory bind an endpoint+token
 // transport exactly once to the ApplicationRef supplied to OpenSaaS. This
 // avoids a second deploy-time Runtime ID while preventing later path drift.

@@ -60,7 +60,14 @@ type DefinitionProvider interface {
 type DueTrigger struct {
 	Definition   schedulersdk.Definition
 	ScheduledFor time.Time
-	Metadata     []byte
+	// ExpectedCursor is the durable definition cursor observed by Due. Claim
+	// compares it atomically before advancing. It is empty for manual and retry
+	// claims, which never move the recurrence cursor.
+	ExpectedCursor time.Time
+	// NextRunAt is set when a misfire decision fast-forwards the durable
+	// cursor after this execution. A zero value advances one normal window.
+	NextRunAt time.Time
+	Metadata  []byte
 }
 
 // RunStore owns cursor, unique-window claim and terminal dispatch evidence.

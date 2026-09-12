@@ -24,6 +24,7 @@ const (
 	DeploymentModeSaaS                     DeploymentMode = "saas"
 	ProtocolVersionV1                                     = "domainry-scheduler-protocol-v1"
 	CapabilityDefinitionPublicationFencing                = "definition_publication_fencing_v1"
+	CapabilityScheduledPlanRecords                        = "scheduled_plan_records_v1"
 )
 
 var (
@@ -93,9 +94,45 @@ type TargetRef struct {
 	Payload       json.RawMessage `json:"payload,omitempty"`
 }
 
+func (t TargetRef) Normalize() TargetRef {
+	if strings.TrimSpace(t.Type) == "" {
+		t.Type = "runtime_operation"
+	}
+	return t
+}
+
+// Validate checks a resolved downstream target without assigning application
+// identity. The label is used only to make owner-boundary errors actionable.
+func (t TargetRef) Validate(label string) error {
+	if strings.TrimSpace(label) == "" {
+		label = "scheduler target"
+	}
+	targetType := strings.TrimSpace(t.Type)
+	if targetType == "" {
+		targetType = "runtime_operation"
+	}
+	if strings.TrimSpace(t.Operation) == "" {
+		return fmt.Errorf("%s operation is required", label)
+	}
+	switch targetType {
+	case "runtime_operation":
+		if strings.TrimSpace(t.Owner) == "" {
+			return fmt.Errorf("%s runtime owner is required", label)
+		}
+	case "http":
+		if strings.TrimSpace(t.ConnectionKey) == "" {
+			return fmt.Errorf("%s HTTP connection is required", label)
+		}
+	default:
+		return fmt.Errorf("%s type %q is unsupported", label, targetType)
+	}
+	return nil
+}
+
 type Policy struct {
 	Overlap           string        `json:"overlap,omitempty"`
 	Misfire           string        `json:"misfire,omitempty"`
+	MisfireGrace      time.Duration `json:"misfire_grace,omitempty"`
 	MaxCatchupWindows int           `json:"max_catchup_windows,omitempty"`
 	Timeout           time.Duration `json:"timeout,omitempty"`
 	MaxAttempts       int           `json:"max_attempts,omitempty"`
@@ -126,33 +163,15 @@ func (d Definition) Validate() error {
 	if strings.TrimSpace(d.Schedule.Type) == "" {
 		return fmt.Errorf("scheduler definition %s schedule type is required", d.Key)
 	}
-	targetType := strings.TrimSpace(d.Target.Type)
-	if targetType == "" {
-		targetType = "runtime_operation"
-	}
-	if strings.TrimSpace(d.Target.Operation) == "" {
-		return fmt.Errorf("scheduler definition %s target operation is required", d.Key)
-	}
-	switch targetType {
-	case "runtime_operation":
-		if strings.TrimSpace(d.Target.Owner) == "" {
-			return fmt.Errorf("scheduler definition %s runtime target owner is required", d.Key)
-		}
-	case "http":
-		if strings.TrimSpace(d.Target.ConnectionKey) == "" {
-			return fmt.Errorf("scheduler definition %s HTTP connection is required", d.Key)
-		}
-	default:
-		return fmt.Errorf("scheduler definition %s target type %q is unsupported", d.Key, targetType)
+	if err := d.Target.Validate("scheduler definition " + d.Key + " target"); err != nil {
+		return err
 	}
 	return nil
 }
 
 // Normalize applies protocol defaults before a definition is retained or dispatched.
 func (d Definition) Normalize() Definition {
-	if strings.TrimSpace(d.Target.Type) == "" {
-		d.Target.Type = "runtime_operation"
-	}
+	d.Target = d.Target.Normalize()
 	return d
 }
 

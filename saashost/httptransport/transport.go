@@ -97,6 +97,60 @@ func (t *Transport) Reconcile(ctx context.Context, app schedulersdk.ApplicationR
 	}
 	return t.requestApplication(ctx, app, http.MethodPut, "definitions", snapshot, nil)
 }
+func (t *Transport) CreateScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanCreate) (schedulersdk.ScheduledPlanReceipt, error) {
+	var out schedulersdk.ScheduledPlanReceipt
+	err := t.requestApplication(ctx, app, http.MethodPost, "plans", input, &out)
+	return out, err
+}
+func (t *Transport) GetScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, lookup schedulersdk.ScheduledPlanLookup) (schedulersdk.ScheduledPlan, error) {
+	var out schedulersdk.ScheduledPlan
+	query := scheduledPlanOwnerQuery(lookup.Owner)
+	err := t.requestApplication(ctx, app, http.MethodGet, "plans/"+url.PathEscape(lookup.PlanID)+"?"+query.Encode(), nil, &out)
+	return out, err
+}
+func (t *Transport) ListScheduledPlans(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanList) (schedulersdk.ScheduledPlanPage, error) {
+	var out schedulersdk.ScheduledPlanPage
+	query := scheduledPlanOwnerQuery(input.Owner)
+	if input.Status != "" {
+		query.Set("status", input.Status)
+	}
+	if input.Cursor != "" {
+		query.Set("cursor", input.Cursor)
+	}
+	if input.Limit != 0 {
+		query.Set("limit", strconv.Itoa(input.Limit))
+	}
+	err := t.requestApplication(ctx, app, http.MethodGet, "plans?"+query.Encode(), nil, &out)
+	return out, err
+}
+func (t *Transport) UpdateScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanUpdate) (schedulersdk.ScheduledPlanReceipt, error) {
+	var out schedulersdk.ScheduledPlanReceipt
+	err := t.requestApplication(ctx, app, http.MethodPut, "plans/"+url.PathEscape(input.PlanID), input, &out)
+	return out, err
+}
+func (t *Transport) PauseScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanReceipt, error) {
+	var out schedulersdk.ScheduledPlanReceipt
+	err := t.requestApplication(ctx, app, http.MethodPost, "plans/"+url.PathEscape(input.PlanID)+"/pause", input, &out)
+	return out, err
+}
+func (t *Transport) ResumeScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanReceipt, error) {
+	var out schedulersdk.ScheduledPlanReceipt
+	err := t.requestApplication(ctx, app, http.MethodPost, "plans/"+url.PathEscape(input.PlanID)+"/resume", input, &out)
+	return out, err
+}
+func (t *Transport) DeleteScheduledPlan(ctx context.Context, app schedulersdk.ApplicationRef, input schedulersdk.ScheduledPlanStatusChange) (schedulersdk.ScheduledPlanDeleteReceipt, error) {
+	var out schedulersdk.ScheduledPlanDeleteReceipt
+	err := t.requestApplication(ctx, app, http.MethodDelete, "plans/"+url.PathEscape(input.PlanID), input, &out)
+	return out, err
+}
+
+func scheduledPlanOwnerQuery(owner schedulersdk.ScheduledPlanOwner) url.Values {
+	query := url.Values{}
+	query.Set("workspace_id", owner.WorkspaceID)
+	query.Set("user_id", owner.UserID)
+	query.Set("product_key", owner.ProductKey)
+	return query
+}
 func (t *Transport) BeginDefinitionPublisherSession(ctx context.Context, app schedulersdk.ApplicationRef) (schedulersdk.DefinitionPublisherSession, error) {
 	var out schedulersdk.DefinitionPublisherSession
 	err := t.requestApplication(ctx, app, http.MethodPost, DefinitionPublisherSessionsResource, nil, &out)
@@ -241,6 +295,16 @@ func (t *Transport) request(ctx context.Context, method, path string, input, out
 		return fmt.Errorf("Scheduler SaaS response exceeds limit")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if strings.Contains(path, "/plans") {
+			switch response.StatusCode {
+			case http.StatusBadRequest:
+				return schedulersdk.ErrScheduledPlanInvalid
+			case http.StatusConflict:
+				return schedulersdk.ErrScheduledPlanConflict
+			case http.StatusNotFound:
+				return schedulersdk.ErrScheduledPlanNotFound
+			}
+		}
 		return fmt.Errorf("Scheduler SaaS returned status %d", response.StatusCode)
 	}
 	if output != nil && len(payload) > 0 {
@@ -254,3 +318,4 @@ func (t *Transport) request(ctx context.Context, method, path string, input, out
 var _ saashost.Transport = (*Transport)(nil)
 var _ saashost.DefinitionPublicationTransport = (*Transport)(nil)
 var _ saashost.ApplicationBindingTransport = (*Transport)(nil)
+var _ saashost.ScheduledPlanTransport = (*Transport)(nil)
