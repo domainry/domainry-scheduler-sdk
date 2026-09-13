@@ -42,6 +42,19 @@ the same DTO; the SaaS transport binds Runtime identity to its machine
 credential, while the plan command carries only the already-resolved product
 owner. A conversation reference is an association, not access authority.
 
+`ScheduledPlanDeletionReader` optionally reads a neutral acknowledgement from
+an existing owner-scoped deletion tombstone. It never deletes, repairs a
+projection or dispatches work. Live and missing plans both return
+`ErrScheduledPlanNotFound`; public plan get/list still hide tombstones. The
+product must authorize the current reader and compare the saved receipt's plan
+ID and revision. Remote bindings require `scheduled_plan_deletion_read_v1` and
+use `GET /v1/applications/{runtime}/plans/{id}/deletion-receipt` with the same
+workspace/user/product owner query as plan get. Unsupported implementations
+return `ErrScheduledPlanDeletionReadUnsupported`; absence of a plan is never
+proof that a supplied deletion receipt is valid.
+The SaaS reader uses an application already initialized by host startup or the
+binding handshake; reading alone does not initialize a tenant's clock worker.
+
 The plan trigger stores its execution policy. Omitted values are normalized by
 Scheduler: one-time work catches up once, recurring work skips missed windows,
 the grace period is one minute, and dispatch gets three attempts with bounded

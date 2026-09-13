@@ -297,6 +297,10 @@ func (t *Transport) request(ctx context.Context, method, path string, input, out
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		if strings.Contains(path, "/plans") {
 			switch response.StatusCode {
+			case http.StatusNotImplemented:
+				if strings.Contains(path, "/deletion-receipt") {
+					return schedulersdk.ErrScheduledPlanDeletionReadUnsupported
+				}
 			case http.StatusBadRequest:
 				return schedulersdk.ErrScheduledPlanInvalid
 			case http.StatusConflict:
