@@ -8,8 +8,9 @@ import (
 func TestPreviewDefinitionAndLeafScheduleShareOwnerRecurrence(t *testing.T) {
 	after := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	definition := map[string]any{
+		"key": "orders.sync", "name": "Orders sync", "status": "enabled",
 		"target_type": "workflow", "target_key": "scheduled:orders.sync",
-		"schedule_type": "interval", "interval_minutes": 5,
+		"schedule_type": "interval", "interval_seconds": 300, "max_attempts": 1, "timeout_seconds": 300,
 	}
 	next, err := PreviewDefinitionData(t.Context(), definition, after, 3)
 	if err != nil {

@@ -61,13 +61,48 @@ func TestDomainProjectsOnlyExactPermissionsFromSchedulerActionManifest(t *testin
 func TestManagementProjectionAndContractAreOwnerDefined(t *testing.T) {
 	definition := ProjectManagementDefinition(DefinitionProjection{Key: "fallback", Data: map[string]any{
 		"key": "orders.sync", "status": "enabled", "schedule_type": "cron", "cron_expression": "0 2 * * *", "max_attempts": 3,
+		"business_calendar_key": "operations", "non_working_day_policy": "skip",
+		"i18n": map[string]any{"zh-CN": map[string]any{"name": "订单同步"}},
 	}})
-	if definition.Key != "orders.sync" || definition.ScheduleExpression != "0 2 * * *" || definition.MaxAttempts != 3 {
+	if definition.Key != "orders.sync" || definition.ScheduleExpression != "0 2 * * *" || definition.MaxAttempts != 3 || definition.BusinessCalendarKey != "operations" || definition.NonWorkingDayPolicy != "skip" || string(definition.I18n["zh-CN"]) != `{"name":"订单同步"}` {
 		t.Fatalf("definition=%#v", definition)
 	}
 	contract := ManagementContract()
 	if contract.ResourceType != "scheduler" || contract.MutationOwner != "source_controlled_json" || contract.ValidationEndpoint == "" {
 		t.Fatalf("contract=%#v", contract)
+	}
+}
+
+func TestScheduleFragmentContractDoesNotPublishRetiredIntervalAliases(t *testing.T) {
+	for _, capability := range ManagementDomain().Capabilities {
+		if capability.Key != "scheduler.schedule" {
+			continue
+		}
+		for _, retired := range []string{"interval_minutes", "interval_hours", "business_calendar_key", "non_working_day_policy"} {
+			if _, exists := capability.InputSchema.Properties[retired]; exists {
+				t.Fatalf("schedule fragment still publishes non-executable field %q", retired)
+			}
+		}
+		return
+	}
+	t.Fatal("scheduler.schedule capability is absent")
+}
+
+func TestManagementBusinessJobPublishesResolvedBusinessCalendarReference(t *testing.T) {
+	capability := schedulerBusinessJobAuthoringCapability()
+	for _, field := range []string{"business_calendar_key", "non_working_day_policy"} {
+		if _, exists := capability.InputSchema.Properties[field]; !exists {
+			t.Fatalf("business job is missing %q", field)
+		}
+	}
+	found := false
+	for _, reference := range capability.ReferenceContracts {
+		if reference.Kind == "business_calendar_key" && reference.InputJSONPointer == "/business_calendar_key" && reference.ResolverEndpoint == "/discovery/references/business_calendar_key" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("business calendar reference contract=%#v", capability.ReferenceContracts)
 	}
 }
 
@@ -86,11 +121,13 @@ func TestManagementBusinessJobRemainsFlattenedAndExplicitlyNamed(t *testing.T) {
 			t.Fatal("management business job input schema is absent")
 		}
 		properties := capability.InputSchema.Properties
-		if _, exists := properties["trigger_type"]; !exists {
-			t.Fatal("management business job lost its runtime trigger_type")
-		}
 		if _, exists := properties["schedule_type"]; !exists {
 			t.Fatal("management business job lost its flattened schedule_type")
+		}
+		for _, retired := range []string{"trigger_type", "interval_minutes", "interval_hours", "operation", "dispatch_mode", "condition_json", "retry_backoff", "idempotency_keys"} {
+			if _, exists := properties[retired]; exists {
+				t.Fatalf("management business job still publishes non-executable field %q", retired)
+			}
 		}
 		if _, exists := properties["schedule"]; exists {
 			t.Fatal("management business job was mislabeled with the nested Blueprint schedule")

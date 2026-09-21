@@ -78,19 +78,73 @@ func (d Descriptor) Supports(capability string) bool {
 }
 
 type Schedule struct {
-	Type            string `json:"type"`
-	Expression      string `json:"expression,omitempty"`
-	Timezone        string `json:"timezone,omitempty"`
-	IntervalSeconds int    `json:"interval_seconds,omitempty"`
-	TimeOfDay       string `json:"time_of_day,omitempty"`
-	DayOfWeek       string `json:"day_of_week,omitempty"`
-	DayOfMonth      int    `json:"day_of_month,omitempty"`
+	Type                string                    `json:"type"`
+	Expression          string                    `json:"expression,omitempty"`
+	Timezone            string                    `json:"timezone,omitempty"`
+	IntervalSeconds     int                       `json:"interval_seconds,omitempty"`
+	TimeOfDay           string                    `json:"time_of_day,omitempty"`
+	DayOfWeek           string                    `json:"day_of_week,omitempty"`
+	DayOfMonth          int                       `json:"day_of_month,omitempty"`
+	BusinessCalendar    *BusinessCalendarSnapshot `json:"business_calendar,omitempty"`
+	NonWorkingDayPolicy string                    `json:"non_working_day_policy,omitempty"`
+}
+
+const (
+	NonWorkingDaySkip        = "skip"
+	NonWorkingDayRollForward = "roll_forward"
+)
+
+// BusinessCalendarSnapshot is the immutable Scheduler-side protocol. Runtime
+// resolves the authored key and publishes the complete revision so Module and
+// SaaS deployments calculate identical occurrences without calling Runtime.
+type BusinessCalendarSnapshot struct {
+	Key                    string                           `json:"key"`
+	Revision               string                           `json:"revision"`
+	Timezone               string                           `json:"timezone"`
+	WeeklyWorkingIntervals []BusinessCalendarWeeklySchedule `json:"weekly_working_intervals"`
+	Holidays               []string                         `json:"holidays,omitempty"`
+	DateExceptions         []BusinessCalendarDateException  `json:"date_exceptions,omitempty"`
+}
+
+type BusinessCalendarWeeklySchedule struct {
+	Weekday   string                         `json:"weekday"`
+	Intervals []BusinessCalendarTimeInterval `json:"intervals"`
+}
+
+type BusinessCalendarDateException struct {
+	Date      string                         `json:"date"`
+	Intervals []BusinessCalendarTimeInterval `json:"intervals"`
+}
+
+type BusinessCalendarTimeInterval struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+func (s Schedule) Normalize() Schedule {
+	if s.BusinessCalendar == nil {
+		return s
+	}
+	calendar := *s.BusinessCalendar
+	calendar.Holidays = append([]string(nil), calendar.Holidays...)
+	calendar.WeeklyWorkingIntervals = append([]BusinessCalendarWeeklySchedule(nil), calendar.WeeklyWorkingIntervals...)
+	for index := range calendar.WeeklyWorkingIntervals {
+		calendar.WeeklyWorkingIntervals[index].Intervals = append([]BusinessCalendarTimeInterval(nil), calendar.WeeklyWorkingIntervals[index].Intervals...)
+	}
+	calendar.DateExceptions = append([]BusinessCalendarDateException(nil), calendar.DateExceptions...)
+	for index := range calendar.DateExceptions {
+		calendar.DateExceptions[index].Intervals = append([]BusinessCalendarTimeInterval(nil), calendar.DateExceptions[index].Intervals...)
+	}
+	s.BusinessCalendar = &calendar
+	return s
 }
 
 type TargetRef struct {
 	Type          string          `json:"type"`
 	Owner         string          `json:"owner"`
 	Operation     string          `json:"operation"`
+	ObjectKey     string          `json:"object_key,omitempty"`
+	RunAsRole     string          `json:"run_as_role,omitempty"`
 	ConnectionKey string          `json:"connection_key,omitempty"`
 	DispatchMode  string          `json:"dispatch_mode,omitempty"`
 	Payload       json.RawMessage `json:"payload,omitempty"`
@@ -121,6 +175,9 @@ func (t TargetRef) Validate(label string) error {
 		if strings.TrimSpace(t.Owner) == "" {
 			return fmt.Errorf("%s runtime owner is required", label)
 		}
+		if strings.TrimSpace(t.Owner) == "business_action" && (strings.TrimSpace(t.ObjectKey) == "" || strings.TrimSpace(t.RunAsRole) == "") {
+			return fmt.Errorf("%s business Action object and run-as role are required", label)
+		}
 	case "http":
 		if strings.TrimSpace(t.ConnectionKey) == "" {
 			return fmt.Errorf("%s HTTP connection is required", label)
@@ -143,10 +200,12 @@ type Policy struct {
 }
 
 type Definition struct {
-	Key      string `json:"key"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Revision string `json:"revision"`
+	Key         string                     `json:"key"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description,omitempty"`
+	I18n        map[string]json.RawMessage `json:"i18n,omitempty"`
+	Status      string                     `json:"status"`
+	Revision    string                     `json:"revision"`
 	// InitialNextRunAt seeds a new Scheduler store during first activation or
 	// Module-to-SaaS cutover. Persisted cursors remain authoritative afterward.
 	InitialNextRunAt time.Time `json:"initial_next_run_at,omitempty"`
@@ -174,6 +233,7 @@ func (d Definition) Validate() error {
 // Normalize applies protocol defaults before a definition is retained or dispatched.
 func (d Definition) Normalize() Definition {
 	d.Target = d.Target.Normalize()
+	d.Schedule = d.Schedule.Normalize()
 	return d
 }
 

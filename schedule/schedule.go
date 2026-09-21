@@ -29,7 +29,11 @@ func Data(value schedulersdk.Schedule) map[string]any {
 }
 
 func NextSchedule(value schedulersdk.Schedule, now time.Time) time.Time {
-	return Next(Data(value), now)
+	next := Next(Data(value), now)
+	if value.BusinessCalendar == nil || value.NonWorkingDayPolicy != schedulersdk.NonWorkingDayRollForward {
+		return next
+	}
+	return rollForwardBusinessOccurrence(value, next)
 }
 
 func Validate(value schedulersdk.Schedule) error {
@@ -66,6 +70,26 @@ func Validate(value schedulersdk.Schedule) error {
 		if _, err := time.LoadLocation(value.Timezone); err != nil {
 			return fmt.Errorf("scheduler timezone is invalid: %w", err)
 		}
+	}
+	if value.BusinessCalendar == nil {
+		if strings.TrimSpace(value.NonWorkingDayPolicy) != "" {
+			return fmt.Errorf("scheduler non-working-day policy requires a business calendar")
+		}
+		return nil
+	}
+	if Type(data) == "once" || Type(data) == "interval" {
+		return fmt.Errorf("scheduler business calendar requires cron or wall-clock recurrence")
+	}
+	if err := ValidateBusinessCalendar(*value.BusinessCalendar); err != nil {
+		return err
+	}
+	if strings.TrimSpace(value.Timezone) == "" || strings.TrimSpace(value.Timezone) != strings.TrimSpace(value.BusinessCalendar.Timezone) {
+		return fmt.Errorf("scheduler business calendar timezone must match schedule timezone")
+	}
+	switch strings.TrimSpace(value.NonWorkingDayPolicy) {
+	case schedulersdk.NonWorkingDaySkip, schedulersdk.NonWorkingDayRollForward:
+	default:
+		return fmt.Errorf("scheduler non-working-day policy is invalid")
 	}
 	return nil
 }

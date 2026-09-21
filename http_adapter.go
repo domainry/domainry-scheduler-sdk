@@ -108,8 +108,8 @@ func schedulerHTTPAdapterContract() (HTTPAdapterContract, error) {
 	definitions := schedulerDefinitionHTTPSchema()
 	authoringContract := objectSchema(map[string]any{
 		"resource_type": map[string]any{"type": "string"}, "status_field": map[string]any{"type": "string"}, "allowed_statuses": arraySchema(map[string]any{"type": "string"}),
-		"business_calendar_field": map[string]any{"type": "string"}, "mutation_owner": map[string]any{"type": "string"}, "validation_endpoint": map[string]any{"type": "string"},
-	}, "resource_type", "status_field", "allowed_statuses", "business_calendar_field", "mutation_owner", "validation_endpoint")
+		"mutation_owner": map[string]any{"type": "string"}, "validation_endpoint": map[string]any{"type": "string"},
+	}, "resource_type", "status_field", "allowed_statuses", "mutation_owner", "validation_endpoint")
 	run := schedulerRunHTTPSchema()
 	deadLetter := schedulerDeadLetterHTTPSchema()
 	preview := objectSchema(map[string]any{"next_runs": arraySchema(map[string]any{"type": "string", "format": "date-time"})}, "next_runs")
@@ -345,13 +345,14 @@ func schedulerDeadLetterHTTPSchema() map[string]any {
 func schedulerDefinitionHTTPSchema() map[string]any {
 	properties := map[string]any{}
 	for _, name := range []string{
-		"key", "name", "status", "schedule_type", "schedule_expression", "time_of_day", "day_of_week", "timezone", "business_calendar_key", "target_type", "target_key", "target_object", "run_as_role",
-		"missed_window_policy", "retry_backoff", "condition_json", "payload_json", "idempotency_keys", "description", "next_run_at", "created_at", "updated_at",
+		"key", "name", "status", "schedule_type", "schedule_expression", "time_of_day", "day_of_week", "timezone", "target_type", "target_key", "target_object", "run_as_role", "connection_key",
+		"missed_window_policy", "payload_json", "description", "next_run_at", "created_at", "updated_at",
 	} {
 		properties[name] = map[string]any{"type": "string"}
 	}
 	for _, name := range []string{"interval_seconds", "day_of_month", "max_attempts", "timeout_seconds", "max_catchup_windows", "retry_delay_seconds", "retry_max_delay_seconds"} {
 		properties[name] = map[string]any{"type": "integer"}
 	}
+	properties["i18n"] = map[string]any{"type": "object", "additionalProperties": true}
 	return objectSchema(properties, "key", "status")
 }

@@ -42,7 +42,7 @@ func TestRemoteDispatchAuthenticatesEveryCallbackDimensionAndRetries(t *testing.
 		t.Fatal(err)
 	}
 	target := schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start", Payload: json.RawMessage(`{}`)}
-	receipt, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "command-1", Target: target})
+	receipt, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, Request{RuntimeID: "runtime-a", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "command-1", Target: target})
 	if err != nil || receipt.ID != "receipt-1" || calls != 2 {
 		t.Fatalf("receipt=%#v calls=%d err=%v", receipt, calls, err)
 	}
@@ -58,7 +58,7 @@ func TestRemoteCredentialCannotDispatchForAnotherRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := Request{RuntimeID: "runtime-b", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	request := Request{RuntimeID: "runtime-b", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
 	_, err = remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-b"}, request)
 	if !errors.Is(err, ErrCallbackAuthentication) || calls != 0 {
 		t.Fatalf("err=%v calls=%d", err, calls)
@@ -85,7 +85,7 @@ func TestRemoteClassifiesCallbackErrorsWithoutDisclosingBody(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+			request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
 			_, err = remote.Dispatch(context.Background(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request)
 			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "must-not-leak") {
 				t.Fatalf("status=%d err=%v", test.status, err)
@@ -99,7 +99,7 @@ func TestRemoteClassifiesCallbackErrorsWithoutDisclosingBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
 	_, err = remote.Dispatch(context.Background(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request)
 	if err == nil || strings.Contains(err.Error(), "must not leak") {
 		t.Fatalf("unsafe callback error=%v", err)
@@ -114,7 +114,7 @@ func TestRemoteRejectsOversizedSuccessfulResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
+	request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
 	if _, err := remote.Dispatch(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request); !errors.Is(err, ErrCallbackResponseInvalid) {
 		t.Fatalf("oversized response err=%v", err)
 	}

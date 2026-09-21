@@ -25,6 +25,16 @@ func ResolveMisfire(value schedulersdk.Schedule, policy schedulersdk.Policy, cur
 	if cursor.IsZero() || cursor.After(now) || limit <= 0 {
 		return MisfireResolution{}
 	}
+	if value.NonWorkingDayPolicy == schedulersdk.NonWorkingDaySkip && IsNonWorkingOccurrence(value, cursor) {
+		next := cursor
+		for !next.After(now) && IsNonWorkingOccurrence(value, next) {
+			next = NextSchedule(value, next)
+			if next.IsZero() {
+				return MisfireResolution{Disable: true}
+			}
+		}
+		return MisfireResolution{CursorAfter: next}
+	}
 	misfire := strings.TrimSpace(policy.Misfire)
 	if misfire == "" {
 		return MisfireResolution{Windows: []time.Time{cursor}}
@@ -53,6 +63,9 @@ func ResolveMisfire(value schedulersdk.Schedule, policy schedulersdk.Policy, cur
 		windows := make([]time.Time, 0, count)
 		current := cursor
 		for len(windows) < count && !current.IsZero() && !current.After(now) {
+			if value.NonWorkingDayPolicy == schedulersdk.NonWorkingDaySkip && IsNonWorkingOccurrence(value, current) {
+				return MisfireResolution{Windows: windows, CursorAfter: current}
+			}
 			windows = append(windows, current)
 			current = nextFromCursor(value, current)
 		}

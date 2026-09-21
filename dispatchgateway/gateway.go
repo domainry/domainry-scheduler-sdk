@@ -33,6 +33,7 @@ var (
 type Request struct {
 	RuntimeID      string                 `json:"runtime_id"`
 	ExecutionID    string                 `json:"execution_id"`
+	DefinitionKey  string                 `json:"definition_key"`
 	IdempotencyKey string                 `json:"idempotency_key"`
 	DueAt          time.Time              `json:"due_at,omitempty"`
 	Target         schedulersdk.TargetRef `json:"target"`
@@ -42,7 +43,7 @@ func (r Request) Validate(application schedulersdk.ApplicationRef) error {
 	if err := application.Validate(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(r.RuntimeID) != application.RuntimeID || strings.TrimSpace(r.ExecutionID) == "" || strings.TrimSpace(r.IdempotencyKey) == "" {
+	if strings.TrimSpace(r.RuntimeID) != application.RuntimeID || strings.TrimSpace(r.ExecutionID) == "" || strings.TrimSpace(r.DefinitionKey) == "" || strings.TrimSpace(r.IdempotencyKey) == "" {
 		return fmt.Errorf("%w: identity and scope are required", ErrCallbackRequestInvalid)
 	}
 	target := r.Target
@@ -50,11 +51,11 @@ func (r Request) Validate(application schedulersdk.ApplicationRef) error {
 	if targetType == "" {
 		targetType = "runtime_operation"
 	}
-	if strings.TrimSpace(target.Operation) == "" || (targetType == "runtime_operation" && strings.TrimSpace(target.Owner) == "") || (targetType == "http" && strings.TrimSpace(target.ConnectionKey) == "") {
-		return fmt.Errorf("%w: target is invalid", ErrCallbackRequestInvalid)
-	}
 	if targetType != "runtime_operation" && targetType != "http" {
 		return fmt.Errorf("%w: target type %q is unsupported", ErrCallbackRequestInvalid, targetType)
+	}
+	if err := target.Validate("callback target"); err != nil {
+		return fmt.Errorf("%w: target is invalid: %v", ErrCallbackRequestInvalid, err)
 	}
 	return nil
 }

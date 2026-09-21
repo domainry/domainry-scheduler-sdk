@@ -3,6 +3,7 @@ package schedule
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,20 @@ func TestSchedulerDefinitionLimitsAndPolicies(t *testing.T) {
 			t.Fatalf("valid limit %v: %v", value, err)
 		}
 	}
+	for _, test := range []struct {
+		field string
+		value any
+		code  string
+	}{
+		{field: "max_attempts", value: 1.5, code: "backend.scheduler.max_attempts_invalid"},
+		{field: "timeout_seconds", value: "300", code: "backend.scheduler.timeout_invalid"},
+		{field: "retry_delay_seconds", value: 1.5, code: "backend.scheduler.retry_policy_invalid"},
+		{field: "interval_seconds", value: 60.5, code: "backend.scheduler.interval_invalid"},
+	} {
+		data := validSchedulerDefinition()
+		data[test.field] = test.value
+		assertSchedulerCode(t, data, test.code)
+	}
 	for _, value := range []any{-1, 101} {
 		data := validSchedulerDefinition()
 		data["missed_window_policy"], data["max_catchup_windows"] = "catch_up_bounded", value
@@ -65,7 +80,10 @@ func TestSchedulerDefinitionLimitsAndPolicies(t *testing.T) {
 	}
 	for _, policy := range []string{"skip", "catch_up_one", "catch_up_bounded", "CATCH_UP_ONE"} {
 		data := validSchedulerDefinition()
-		data["missed_window_policy"], data["max_catchup_windows"] = policy, 100
+		data["missed_window_policy"] = policy
+		if strings.EqualFold(policy, "catch_up_bounded") {
+			data["max_catchup_windows"] = 100
+		}
 		if err := ValidateDefinitionData(t.Context(), data); err != nil {
 			t.Fatalf("policy %s: %v", policy, err)
 		}
@@ -73,12 +91,9 @@ func TestSchedulerDefinitionLimitsAndPolicies(t *testing.T) {
 	data := validSchedulerDefinition()
 	data["missed_window_policy"] = "catch_everything"
 	assertSchedulerCode(t, data, "backend.scheduler.missed_window_policy_invalid")
-	for _, field := range []string{"timezone", "missed_window_policy", "schedule_type"} {
+	for _, field := range []string{"timezone", "missed_window_policy"} {
 		data = validSchedulerDefinition()
 		data[field] = ""
-		if field == "schedule_type" {
-			data["schedule_expression"] = "daily"
-		}
 		if err := ValidateDefinitionData(t.Context(), data); err != nil {
 			t.Fatalf("empty %s: %v", field, err)
 		}
@@ -90,12 +105,24 @@ func TestSchedulerDefinitionLimitsAndPolicies(t *testing.T) {
 	}
 	data = validSchedulerDefinition()
 	delete(data, "schedule_type")
-	data["schedule_expression"] = "daily"
-	if err := ValidateDefinitionData(t.Context(), data); err != nil {
-		t.Fatalf("missing schedule type: %v", err)
-	}
+	assertSchedulerCode(t, data, "backend.scheduler.schedule_type_required")
+	data = validSchedulerDefinition()
+	delete(data, "max_attempts")
+	assertSchedulerCode(t, data, "backend.scheduler.max_attempts_required")
+	data = validSchedulerDefinition()
+	delete(data, "timeout_seconds")
+	assertSchedulerCode(t, data, "backend.scheduler.timeout_required")
 	if missedWindowPolicy(nil) != "skip" || missedWindowPolicy(map[string]any{"missed_window_policy": "CATCH_UP_ONE"}) != "catch_up_one" {
 		t.Fatal("missed-window normalization")
+	}
+}
+
+func TestSchedulerScheduleFragmentRejectsFieldsItDoesNotExecute(t *testing.T) {
+	for _, field := range []string{"interval_minutes", "interval_hours", "business_calendar_key", "non_working_day_policy", "name", "max_attempts"} {
+		data := map[string]any{"schedule_type": "interval", "interval_seconds": 60, field: 1}
+		if err := ValidateData(t.Context(), data); ValidationCode(err) != "backend.scheduler.field_unsupported" || ValidationParams(err)["field"] != field {
+			t.Fatalf("field=%s error=%v params=%v", field, err, ValidationParams(err))
+		}
 	}
 }
 
@@ -106,13 +133,12 @@ func TestSchedulerDefinitionScheduleMatrix(t *testing.T) {
 		{"schedule_type": "weekly_at", "time_of_day": "08:30:15", "day_of_week": "monday"},
 		{"schedule_type": "monthly_at", "time_of_day": "08:30", "day_of_month": 1},
 		{"schedule_type": "cron", "schedule_expression": "0 8 * * *"},
-		{"schedule_type": "", "schedule_expression": "hourly"},
-		{"schedule_type": "", "schedule_expression": "daily"},
-		{"schedule_type": "", "schedule_expression": "weekly"},
-		{"schedule_type": "", "schedule_expression": "monthly"},
 	}
 	for index, schedule := range valid {
 		data := validSchedulerDefinition()
+		for _, field := range []string{"schedule_expression", "interval_seconds", "time_of_day", "day_of_week", "day_of_month"} {
+			delete(data, field)
+		}
 		for key, value := range schedule {
 			data[key] = value
 		}
@@ -137,6 +163,9 @@ func TestSchedulerDefinitionScheduleMatrix(t *testing.T) {
 	}
 	for _, test := range invalid {
 		data := validSchedulerDefinition()
+		for _, field := range []string{"schedule_expression", "interval_seconds", "time_of_day", "day_of_week", "day_of_month"} {
+			delete(data, field)
+		}
 		for key, value := range test.values {
 			data[key] = value
 		}
@@ -154,6 +183,7 @@ func TestSchedulerValidationErrorParams(t *testing.T) {
 
 func validSchedulerDefinition() map[string]any {
 	return map[string]any{
+		"key": "daily", "name": "Daily", "status": "enabled",
 		"target_type": "workflow", "target_key": "scheduled:daily", "timezone": "UTC",
 		"schedule_type": "interval", "interval_seconds": 60, "max_attempts": 3, "timeout_seconds": 300,
 	}

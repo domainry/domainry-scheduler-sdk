@@ -210,3 +210,36 @@ func TestDefinitionRequiresStableTargetAndRevision(t *testing.T) {
 		t.Fatal("definition without downstream operation accepted")
 	}
 }
+
+func TestBusinessActionTargetRequiresAndSerializesExecutionIdentity(t *testing.T) {
+	target := TargetRef{
+		Type:      "runtime_operation",
+		Owner:     "business_action",
+		Operation: "order.expire",
+		ObjectKey: "order",
+		RunAsRole: "order_automation",
+		Payload:   json.RawMessage(`{"status":"expired"}`),
+	}
+	if err := target.Validate("business action target"); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"owner":"business_action"`, `"object_key":"order"`, `"run_as_role":"order_automation"`} {
+		if !strings.Contains(string(encoded), field) {
+			t.Fatalf("target wire omits %s: %s", field, encoded)
+		}
+	}
+	for _, mutate := range []func(*TargetRef){
+		func(candidate *TargetRef) { candidate.ObjectKey = "" },
+		func(candidate *TargetRef) { candidate.RunAsRole = "" },
+	} {
+		invalid := target
+		mutate(&invalid)
+		if err := invalid.Validate("business action target"); err == nil {
+			t.Fatalf("invalid target accepted: %+v", invalid)
+		}
+	}
+}

@@ -60,3 +60,21 @@ func TestNextAfterKeepsIntervalPhase(t *testing.T) {
 		t.Fatalf("next=%s want=%s", got, want)
 	}
 }
+
+func TestResolveMisfireFastForwardsNonWorkingOccurrencesWithoutDispatch(t *testing.T) {
+	calendar := weekdayCalendarSnapshot()
+	calendar.Timezone = "UTC"
+	value := schedulersdk.Schedule{Type: "daily_at", TimeOfDay: "09:00", Timezone: "UTC", BusinessCalendar: calendar, NonWorkingDayPolicy: schedulersdk.NonWorkingDaySkip}
+	saturday := time.Date(2026, 9, 19, 9, 0, 0, 0, time.UTC)
+	resolved := ResolveMisfire(value, schedulersdk.Policy{Misfire: schedulersdk.ScheduledPlanMisfireCatchMany, MaxCatchupWindows: 5}, saturday, time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), 5)
+	wantMonday := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
+	if len(resolved.Windows) != 0 || !resolved.CursorAfter.Equal(wantMonday) {
+		t.Fatalf("weekend resolution=%+v", resolved)
+	}
+
+	friday := time.Date(2026, 9, 18, 9, 0, 0, 0, time.UTC)
+	resolved = ResolveMisfire(value, schedulersdk.Policy{Misfire: schedulersdk.ScheduledPlanMisfireCatchMany, MaxCatchupWindows: 5}, friday, time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC), 5)
+	if len(resolved.Windows) != 1 || !resolved.Windows[0].Equal(friday) || !resolved.CursorAfter.Equal(saturday) {
+		t.Fatalf("bounded resolution crossed a closed date: %+v", resolved)
+	}
+}
