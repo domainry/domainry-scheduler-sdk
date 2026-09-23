@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 	"github.com/domainry/domainry-scheduler-sdk/saashost"
 )
@@ -24,16 +23,14 @@ const maxResponseBytes int64 = 1 << 20
 const DefinitionPublisherSessionsResource = "definition-publication-sessions"
 
 type Config struct {
-	Endpoint                 string
-	Token                    string
-	Client                   *http.Client
-	CapabilityContractSHA256 string
+	Endpoint string
+	Token    string
+	Client   *http.Client
 }
 
 func ConfigFromEnvironment() Config {
 	return Config{
 		Endpoint: strings.TrimSpace(os.Getenv("SCHEDULER_SAAS_ENDPOINT")), Token: strings.TrimSpace(os.Getenv("SCHEDULER_SAAS_TOKEN")),
-		CapabilityContractSHA256: strings.TrimSpace(os.Getenv("SCHEDULER_CAPABILITY_CONTRACT_SHA256")),
 	}
 }
 
@@ -44,10 +41,9 @@ type Transport struct {
 	application schedulersdk.ApplicationRef
 	bound       bool
 	client      *http.Client
-	capability  modulecapability.Binding
 }
 
-func Open(ctx context.Context, config Config) (*Transport, error) {
+func Open(_ context.Context, config Config) (*Transport, error) {
 	endpoint, err := url.Parse(strings.TrimSpace(config.Endpoint))
 	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
 		return nil, fmt.Errorf("Scheduler SaaS endpoint is invalid")
@@ -60,27 +56,7 @@ func Open(ctx context.Context, config Config) (*Transport, error) {
 	if token == "" {
 		return nil, fmt.Errorf("Scheduler SaaS private credential is required")
 	}
-	capability, err := modulecapability.OpenRemote(ctx, modulecapability.RemoteConfig{
-		BaseURL: strings.TrimRight(endpoint.String(), "/"), Client: client, ExpectedModuleKey: "scheduler", ExpectedContractSHA256: config.CapabilityContractSHA256,
-		Authorize: func(request *http.Request) error {
-			request.Header.Set("Authorization", "Bearer "+token)
-			return nil
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &Transport{endpoint: endpoint, token: token, client: client, capability: capability}, nil
-}
-
-func (t *Transport) CapabilitySummary(ctx context.Context) (modulecapability.ModuleSummary, error) {
-	return t.capability.CapabilitySummary(ctx)
-}
-func (t *Transport) CapabilityCategory(ctx context.Context, key string) (modulecapability.CategoryDocument, error) {
-	return t.capability.CapabilityCategory(ctx, key)
-}
-func (t *Transport) ValidateCapabilityCandidate(ctx context.Context, request modulecapability.ValidationRequest) (modulecapability.ValidationResult, error) {
-	return t.capability.ValidateCapabilityCandidate(ctx, request)
+	return &Transport{endpoint: endpoint, token: token, client: client}, nil
 }
 
 func (t *Transport) Descriptor(ctx context.Context, app schedulersdk.ApplicationRef) (schedulersdk.Descriptor, error) {

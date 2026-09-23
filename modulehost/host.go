@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	"github.com/domainry/domainry-orm/sqlhost"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
@@ -26,6 +28,19 @@ type ModuleHost interface {
 	Dialect() Dialect
 	Migrations() MigrationRegistrar
 	WorkerID() string
+}
+
+// OperationStoreHost supplies the installation-wide operation ledger used by
+// Module-mode management commands. Scheduler must not create a private command
+// receipt table beside the host's canonical _operations ledger.
+type OperationStoreHost interface {
+	OperationStore() sharedoperation.Store
+}
+
+// DefinitionStoreHost supplies the installation-wide versioned Definition
+// store used for Scheduler definitions and publication fencing state.
+type DefinitionStoreHost interface {
+	DefinitionStore() metadatasdk.DefinitionStore
 }
 
 type Executor = sqlhost.Executor

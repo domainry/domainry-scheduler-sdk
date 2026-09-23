@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/domainry/domainry-foundation/modulecapability"
 )
 
 type DeploymentMode string
@@ -487,15 +485,18 @@ type Run struct {
 	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
-// DeadLetter is Scheduler-owned terminal failure state. RunEvent remains
-// immutable execution evidence and is deliberately not an operations queue.
+// DeadLetter is a projection of terminal failure and resolution fields stored
+// on the Scheduler run row.
 type DeadLetter struct {
-	RunID         string    `json:"run_id"`
-	DefinitionKey string    `json:"definition_key"`
-	Status        string    `json:"status"`
-	Reason        string    `json:"reason"`
-	FailedAt      time.Time `json:"failed_at"`
-	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
+	RunID                 string    `json:"run_id"`
+	DefinitionKey         string    `json:"definition_key"`
+	Status                string    `json:"status"`
+	Reason                string    `json:"reason"`
+	FailedAt              time.Time `json:"failed_at"`
+	ResolvedAt            time.Time `json:"resolved_at,omitempty"`
+	ResolvedBy            string    `json:"resolved_by,omitempty"`
+	ResolutionOperationID string    `json:"resolution_operation_id,omitempty"`
+	ResolutionReason      string    `json:"resolution_reason,omitempty"`
 }
 
 // TriggerBacklog is the Scheduler-owned count of durable triggers that are
@@ -556,7 +557,6 @@ type Factory interface {
 // configuration, Tick performs bounded recovery, and TriggerNow shares the
 // same durable dispatch path as clock-driven work.
 type Binding interface {
-	modulecapability.Binding
 	Descriptor() Descriptor
 	Reconcile(context.Context) error
 	Preview(context.Context, Schedule, time.Time, int) ([]time.Time, error)

@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
-	"github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 	"github.com/domainry/domainry-scheduler-sdk/saashost"
 )
@@ -25,23 +23,6 @@ func (transport handlerRoundTripper) RoundTrip(request *http.Request) (*http.Res
 }
 
 func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing.T) {
-	fixture, err := contracttest.NewFixtureBinding("scheduler")
-	if err != nil {
-		t.Fatal(err)
-	}
-	summary, err := fixture.CapabilitySummary(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	capability, err := modulecapability.NewHTTPHandler(fixture, func(request *http.Request) error {
-		if request.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("capability auth=%q", request.Header.Get("Authorization"))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	session := schedulersdk.DefinitionPublisherSession{
 		ContractVersion: schedulersdk.DefinitionPublicationContractVersion,
 		Generation:      4,
@@ -49,9 +30,6 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 	}
 	var applicationCalls int
 	mux := http.NewServeMux()
-	mux.Handle(modulecapability.SummaryPath, capability)
-	mux.Handle(modulecapability.CategoriesPath, capability)
-	mux.Handle(modulecapability.ValidationPath, capability)
 	mux.HandleFunc("GET /v1/applications/runtime-a/descriptor", func(response http.ResponseWriter, request *http.Request) {
 		applicationCalls++
 		assertPrivateRequest(t, request)
@@ -97,7 +75,7 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 		_ = json.NewEncoder(response).Encode(saved)
 	})
 	client := &http.Client{Transport: handlerRoundTripper{handler: mux}}
-	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: client, CapabilityContractSHA256: summary.Identity.ContractSHA256})
+	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: client})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +89,6 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 	if err != nil || loaded.ID != "plan-a" || loaded.Owner != owner {
 		t.Fatalf("loaded plan=%+v err=%v", loaded, err)
 	}
-	contracttest.VerifyBinding(t, transport)
 	if _, err := transport.Descriptor(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,23 +108,14 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 }
 
 func TestTransportMapsScheduledPlanErrorsWithoutCopyingResponseBody(t *testing.T) {
-	fixture, err := contracttest.NewFixtureBinding("scheduler")
-	if err != nil {
-		t.Fatal(err)
-	}
-	summary, _ := fixture.CapabilitySummary(t.Context())
-	capability, _ := modulecapability.NewHTTPHandler(fixture, func(*http.Request) error { return nil })
 	mux := http.NewServeMux()
-	mux.Handle(modulecapability.SummaryPath, capability)
-	mux.Handle(modulecapability.CategoriesPath, capability)
-	mux.Handle(modulecapability.ValidationPath, capability)
 	mux.HandleFunc("POST /v1/applications/runtime-a/plans", func(response http.ResponseWriter, _ *http.Request) {
 		http.Error(response, "private database detail", http.StatusConflict)
 	})
 	mux.HandleFunc("GET /v1/applications/runtime-a/plans/missing", func(response http.ResponseWriter, _ *http.Request) {
 		http.Error(response, "private database detail", http.StatusNotFound)
 	})
-	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: &http.Client{Transport: handlerRoundTripper{handler: mux}}, CapabilityContractSHA256: summary.Identity.ContractSHA256})
+	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: &http.Client{Transport: handlerRoundTripper{handler: mux}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,26 +136,11 @@ func TestTransportRejectsUnboundCredentialAndUnfencedReconcile(t *testing.T) {
 			t.Fatalf("config=%+v was accepted", config)
 		}
 	}
-	fixture, err := contracttest.NewFixtureBinding("scheduler")
-	if err != nil {
-		t.Fatal(err)
-	}
-	summary, err := fixture.CapabilitySummary(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	capability, err := modulecapability.NewHTTPHandler(fixture, func(*http.Request) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
 	mux := http.NewServeMux()
-	mux.Handle(modulecapability.SummaryPath, capability)
-	mux.Handle(modulecapability.CategoriesPath, capability)
-	mux.Handle(modulecapability.ValidationPath, capability)
 	mux.HandleFunc("GET /v1/applications/runtime-a/descriptor", func(response http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(response).Encode(schedulersdk.Descriptor{ProtocolVersion: schedulersdk.ProtocolVersionV1, Mode: schedulersdk.DeploymentModeSaaS})
 	})
-	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: &http.Client{Transport: handlerRoundTripper{handler: mux}}, CapabilityContractSHA256: summary.Identity.ContractSHA256})
+	transport, err := Open(t.Context(), Config{Endpoint: "https://scheduler.example", Token: "secret", Client: &http.Client{Transport: handlerRoundTripper{handler: mux}}})
 	if err != nil {
 		t.Fatal(err)
 	}

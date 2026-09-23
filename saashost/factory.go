@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 	"github.com/domainry/domainry-scheduler-sdk/modulehost"
 )
@@ -16,7 +15,6 @@ var ErrApplicationBindingMismatch = errors.New("Scheduler SaaS credential applic
 // downstreams may still be reached through a Runtime callback operation; that
 // routing decision is carried by TargetRef.DispatchMode.
 type Transport interface {
-	modulecapability.Binding
 	Descriptor(context.Context, schedulersdk.ApplicationRef) (schedulersdk.Descriptor, error)
 	Reconcile(context.Context, schedulersdk.ApplicationRef, schedulersdk.DefinitionSnapshot) error
 	Preview(context.Context, schedulersdk.ApplicationRef, schedulersdk.Schedule, time.Time, int) ([]time.Time, error)
