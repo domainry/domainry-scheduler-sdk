@@ -1,7 +1,5 @@
 github.com/domainry/domainry-foundation v0.1.2 h1:rKVw7sHiOF2rnaK+pWrtxR9RXCJSQxJa98SgDlqK/HE=
 github.com/domainry/domainry-foundation v0.1.2/go.mod h1:Gy+KTlqbubYK5bK005y0DBwm04LP8Kpx+n7/P6QGjjY=
-github.com/domainry/domainry-metadata-sdk v0.1.4 h1:amtShktqDSrix/VLra7mA+7IG4cdPSoNq4EYKPok9ME=
-github.com/domainry/domainry-metadata-sdk v0.1.4/go.mod h1:3ezsvuyNY9WxSqbkWJOuLNzoWi0Pj6Fa8x/SJ22WaZo=
 github.com/domainry/domainry-orm v0.1.30 h1:5QOtG2qRzV1PhiioS2aKfCoEt9ab3OBucwicHAn/5HQ=
 github.com/domainry/domainry-orm v0.1.30/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
