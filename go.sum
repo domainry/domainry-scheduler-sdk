@@ -1,6 +1,6 @@
-github.com/domainry/domainry-foundation v0.1.40 h1:QSXjeVrjXoX/wcLJWKCKFGiD/9PbScd7A5Jzsz71Gmw=
-github.com/domainry/domainry-foundation v0.1.40/go.mod h1:ccnHN+6FE4EKc6XP1ycz+ckU3XfgI9WDYKFyXuD+3/Q=
-github.com/domainry/domainry-orm v0.1.31 h1:fovrAVD9kj4nPUgXt0ReDe7oKd3cnM03mhh+Q51SkLI=
-github.com/domainry/domainry-orm v0.1.31/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
+github.com/domainry/domainry-foundation v0.1.41 h1:rqhalTTYpXoDIBida99yiScVf0EoD1SxO/0HOJxV4MY=
+github.com/domainry/domainry-foundation v0.1.41/go.mod h1:swF/3qEtTH4V94N68yxBroYDOQ/ybycO5fC6UZvE9Ks=
+github.com/domainry/domainry-orm v0.1.32 h1:rDLD7P5FidqXtmNefruEMiI5VMvFK/Lkhy9jwSGswjk=
+github.com/domainry/domainry-orm v0.1.32/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
 github.com/robfig/cron/v3 v3.0.1/go.mod h1:eQICP3HwyT7UooqI/z+Ov+PtYAWygg1TEWWzGIFLtro=
