@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/domainry/domainry-foundation/telemetry"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 	"github.com/domainry/domainry-scheduler-sdk/saashost"
 )
@@ -56,7 +57,7 @@ func Open(_ context.Context, config Config) (*Transport, error) {
 	if token == "" {
 		return nil, fmt.Errorf("Scheduler SaaS private credential is required")
 	}
-	return &Transport{endpoint: endpoint, token: token, client: client}, nil
+	return &Transport{endpoint: endpoint, token: token, client: telemetry.InstrumentHTTPClient(client, "github.com/domainry/domainry-scheduler-sdk/saashost/httptransport")}, nil
 }
 
 func (t *Transport) Descriptor(ctx context.Context, app schedulersdk.ApplicationRef) (schedulersdk.Descriptor, error) {
@@ -249,6 +250,7 @@ func (t *Transport) request(ctx context.Context, method, path string, input, out
 		endpoint.Path = strings.TrimRight(t.endpoint.Path, "/") + path[:index]
 		endpoint.RawQuery = path[index+1:]
 	}
+	ctx = telemetry.WithHTTPClientOperation(ctx, "scheduler.remote")
 	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
 		return err
