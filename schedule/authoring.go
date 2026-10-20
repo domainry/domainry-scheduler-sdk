@@ -26,6 +26,8 @@ func (e *ValidationError) Error() string { return e.Code }
 
 func (e *ValidationError) ErrorCode() string { return strings.TrimSpace(e.Code) }
 
+func (*ValidationError) ApplicationErrorKind() string { return "bad_request" }
+
 func (e *ValidationError) ErrorParams() map[string]string {
 	if len(e.Params) == 0 {
 		return nil
