@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/apperror"
 	"github.com/domainry/domainry-foundation/telemetry"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
@@ -117,7 +118,8 @@ func (r *Remote) perform(parent context.Context, idempotencyKey string, body []b
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		callbackErr := decodeCallbackError(response)
-		return Receipt{}, callbackErr.Retryable, callbackErr
+		kind := apperror.KindOf(callbackErr)
+		return Receipt{}, kind == apperror.KindRateLimited || kind == apperror.KindUnavailable, callbackErr
 	}
 	payload, err := io.ReadAll(io.LimitReader(response.Body, maxCallbackResponseBytes+1))
 	if err != nil || int64(len(payload)) > maxCallbackResponseBytes {
@@ -130,14 +132,38 @@ func (r *Remote) perform(parent context.Context, idempotencyKey string, body []b
 	return receipt, false, nil
 }
 
-func decodeCallbackError(response *http.Response) *CallbackError {
-	retryable := response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500
+func decodeCallbackError(response *http.Response) error {
 	var envelope struct {
 		Code string `json:"code"`
 	}
 	payload, _ := io.ReadAll(io.LimitReader(response.Body, maxCallbackResponseBytes))
 	_ = json.Unmarshal(payload, &envelope)
-	return &CallbackError{StatusCode: response.StatusCode, Code: safeCallbackCode(envelope.Code), Retryable: retryable}
+	kind, cause, fallbackCode := callbackErrorClassification(response.StatusCode)
+	code := safeCallbackCode(envelope.Code)
+	if code == "" {
+		code = fallbackCode
+	}
+	return apperror.New(kind, code, cause, nil)
+}
+
+func callbackErrorClassification(status int) (apperror.ErrorKind, error, string) {
+	switch status {
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return apperror.KindBadRequest, ErrCallbackRequestInvalid, "scheduler.callback.request_invalid"
+	case http.StatusUnauthorized:
+		return apperror.KindForbidden, ErrCallbackAuthentication, "scheduler.callback.authentication_failed"
+	case http.StatusForbidden, http.StatusNotFound, http.StatusMethodNotAllowed:
+		return apperror.KindForbidden, ErrCallbackRejected, "scheduler.callback.rejected"
+	case http.StatusConflict:
+		return apperror.KindConflict, ErrCallbackIdempotencyConflict, "scheduler.callback.idempotency_conflict"
+	case http.StatusTooManyRequests:
+		return apperror.KindRateLimited, ErrCallbackRetryable, "scheduler.callback.rate_limited"
+	default:
+		if status >= http.StatusInternalServerError {
+			return apperror.KindUnavailable, ErrCallbackRetryable, "scheduler.callback.unavailable"
+		}
+		return apperror.KindInternal, ErrCallbackResponseInvalid, "scheduler.callback.response_invalid"
+	}
 }
 
 func safeCallbackCode(value string) string {

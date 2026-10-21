@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/domainry/domainry-foundation/apperror"
 	schedulersdk "github.com/domainry/domainry-scheduler-sdk"
 )
 
@@ -67,15 +68,16 @@ func TestRemoteCredentialCannotDispatchForAnotherRuntime(t *testing.T) {
 
 func TestRemoteClassifiesCallbackErrorsWithoutDisclosingBody(t *testing.T) {
 	for _, test := range []struct {
-		status int
-		want   error
+		status   int
+		want     error
+		wantKind apperror.ErrorKind
 	}{
-		{status: http.StatusBadRequest, want: ErrCallbackRequestInvalid},
-		{status: http.StatusUnauthorized, want: ErrCallbackAuthentication},
-		{status: http.StatusForbidden, want: ErrCallbackRejected},
-		{status: http.StatusConflict, want: ErrCallbackIdempotencyConflict},
-		{status: http.StatusTooManyRequests, want: ErrCallbackRetryable},
-		{status: http.StatusInternalServerError, want: ErrCallbackRetryable},
+		{status: http.StatusBadRequest, want: ErrCallbackRequestInvalid, wantKind: apperror.KindBadRequest},
+		{status: http.StatusUnauthorized, want: ErrCallbackAuthentication, wantKind: apperror.KindForbidden},
+		{status: http.StatusForbidden, want: ErrCallbackRejected, wantKind: apperror.KindForbidden},
+		{status: http.StatusConflict, want: ErrCallbackIdempotencyConflict, wantKind: apperror.KindConflict},
+		{status: http.StatusTooManyRequests, want: ErrCallbackRetryable, wantKind: apperror.KindRateLimited},
+		{status: http.StatusInternalServerError, want: ErrCallbackRetryable, wantKind: apperror.KindUnavailable},
 	} {
 		t.Run(http.StatusText(test.status), func(t *testing.T) {
 			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -87,7 +89,7 @@ func TestRemoteClassifiesCallbackErrorsWithoutDisclosingBody(t *testing.T) {
 			}
 			request := Request{RuntimeID: "runtime-a", ExecutionID: "run-1", DefinitionKey: "daily", IdempotencyKey: "run-1", Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "workflow", Operation: "start"}}
 			_, err = remote.Dispatch(context.Background(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, request)
-			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "must-not-leak") {
+			if !errors.Is(err, test.want) || apperror.KindOf(err) != test.wantKind || apperror.CodeOf(err) != "dispatch.safe_code" || strings.Contains(err.Error(), "must-not-leak") {
 				t.Fatalf("status=%d err=%v", test.status, err)
 			}
 		})
