@@ -476,6 +476,8 @@ func (l Lease) Valid() bool {
 }
 
 type Run struct {
+	ID                int64             `json:"id"`
+	RunID             string            `json:"run_id"`
 	Trigger           Trigger           `json:"trigger"`
 	Lease             Lease             `json:"lease"`
 	Status            string            `json:"status"`

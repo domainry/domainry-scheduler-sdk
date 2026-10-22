@@ -91,8 +91,8 @@ func (t *Transport) ListScheduledPlans(ctx context.Context, app schedulersdk.App
 	if input.Status != "" {
 		query.Set("status", input.Status)
 	}
-	if input.Cursor != "" {
-		query.Set("cursor", input.Cursor)
+	if input.Cursor > 0 {
+		query.Set("cursor", strconv.FormatInt(input.Cursor, 10))
 	}
 	if input.Limit != 0 {
 		query.Set("limit", strconv.Itoa(input.Limit))

@@ -104,7 +104,8 @@ type ScheduledPlanCreate struct {
 // ScheduledPlan is Scheduler-owned durable plan state. Revision starts at one
 // and is reserved for G05's compare-and-swap management operations.
 type ScheduledPlan struct {
-	ID              string                       `json:"id"`
+	ID              int64                        `json:"id"`
+	PlanID          string                       `json:"plan_id"`
 	Name            string                       `json:"name"`
 	Owner           ScheduledPlanOwner           `json:"owner"`
 	Timezone        string                       `json:"timezone"`
@@ -130,17 +131,17 @@ type ScheduledPlanLookup struct {
 }
 
 // ScheduledPlanList is an owner-scoped, stable plan query. Cursor is the last
-// returned plan ID and is meaningful only with the same owner and status.
+// returned physical ID and is meaningful only with the same owner and status.
 type ScheduledPlanList struct {
 	Owner  ScheduledPlanOwner `json:"owner"`
 	Status string             `json:"status,omitempty"`
-	Cursor string             `json:"cursor,omitempty"`
+	Cursor int64              `json:"cursor,omitempty"`
 	Limit  int                `json:"limit,omitempty"`
 }
 
 type ScheduledPlanPage struct {
 	Items      []ScheduledPlan `json:"items"`
-	NextCursor string          `json:"next_cursor,omitempty"`
+	NextCursor int64           `json:"next_cursor,omitempty"`
 }
 
 // ScheduledPlanUpdate replaces the mutable plan specification under revision

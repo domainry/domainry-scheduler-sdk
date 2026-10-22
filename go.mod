@@ -3,11 +3,11 @@ module github.com/domainry/domainry-scheduler-sdk
 go 1.26.0
 
 require (
-	github.com/domainry/domainry-foundation v0.2.10
+	github.com/domainry/domainry-foundation v0.2.12
 	github.com/robfig/cron/v3 v3.0.1
 )
 
-require github.com/domainry/domainry-orm v0.1.33
+require github.com/domainry/domainry-orm v0.1.34
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

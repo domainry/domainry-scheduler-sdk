@@ -63,7 +63,7 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		saved = schedulersdk.ScheduledPlan{ID: "plan-a", Name: input.Name, Owner: input.Owner, Timezone: input.Timezone, Trigger: input.Trigger, Input: input.Input, AllowedActions: input.AllowedActions, Target: input.Target, ConversationRef: input.ConversationRef, Status: "enabled", Revision: 1}
+		saved = schedulersdk.ScheduledPlan{ID: 1, PlanID: "plan-a", Name: input.Name, Owner: input.Owner, Timezone: input.Timezone, Trigger: input.Trigger, Input: input.Input, AllowedActions: input.AllowedActions, Target: input.Target, ConversationRef: input.ConversationRef, Status: "enabled", Revision: 1}
 		_ = json.NewEncoder(response).Encode(schedulersdk.ScheduledPlanReceipt{Plan: saved})
 	})
 	mux.HandleFunc("GET /v1/applications/runtime-a/plans/plan-a", func(response http.ResponseWriter, request *http.Request) {
@@ -82,11 +82,11 @@ func TestTransportBindsCredentialAndDefinitionPublicationToOneRuntime(t *testing
 	owner := schedulersdk.ScheduledPlanOwner{WorkspaceID: "workspace-a", UserID: "user-a", ProductKey: "agent"}
 	at := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)
 	receipt, err := transport.CreateScheduledPlan(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, schedulersdk.ScheduledPlanCreate{ClientID: "plan-a", Name: "Friday", Owner: owner, Timezone: "Asia/Shanghai", Trigger: schedulersdk.ScheduledPlanTrigger{Type: "once", At: &at}, Input: json.RawMessage(`{}`), Target: schedulersdk.TargetRef{Type: "runtime_operation", Owner: "agent", Operation: "conversation_task_start"}})
-	if err != nil || receipt.Plan.ID != "plan-a" {
+	if err != nil || receipt.Plan.PlanID != "plan-a" {
 		t.Fatalf("plan receipt=%+v err=%v", receipt, err)
 	}
 	loaded, err := transport.GetScheduledPlan(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}, schedulersdk.ScheduledPlanLookup{Owner: owner, PlanID: "plan-a"})
-	if err != nil || loaded.ID != "plan-a" || loaded.Owner != owner {
+	if err != nil || loaded.PlanID != "plan-a" || loaded.Owner != owner {
 		t.Fatalf("loaded plan=%+v err=%v", loaded, err)
 	}
 	if _, err := transport.Descriptor(t.Context(), schedulersdk.ApplicationRef{RuntimeID: "runtime-a"}); err != nil {

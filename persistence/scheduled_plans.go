@@ -27,5 +27,5 @@ type ScheduledPlanRepository interface {
 // view. It is runtime-bound by the concrete store and is never a product list
 // API; G05 can add an owner-scoped management query separately.
 type ScheduledPlanRecoveryRepository interface {
-	ListScheduledPlansForRecovery(context.Context, string, int) ([]schedulersdk.ScheduledPlan, error)
+	ListScheduledPlansForRecovery(context.Context, int64, int) ([]schedulersdk.ScheduledPlan, error)
 }
