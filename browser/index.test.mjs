@@ -20,4 +20,6 @@ test('normalizes owner projections and preserves command evidence', async () => 
   await client.cancel('run/1', 'stuck run')
   assert.equal(calls.at(-1).path, '/scheduler/runs/run%2F1/cancel')
   assert.equal(calls.at(-1).options.headers['X-Operation-Confirmation'], 'confirmed')
+	assert.equal(Object.hasOwn(calls.at(-1).options, 'requestId'), false)
+	assert.equal(calls.at(-1).options.headers['Idempotency-Key'], 'key-1')
 })
