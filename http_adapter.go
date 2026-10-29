@@ -127,6 +127,9 @@ func SchedulerAuthorizationActions() ([]actioncontract.ActionDefinition, error) 
 func schedulerRoute(key, capabilityKey, capabilityLabel, pattern string, effect actioncontract.EffectClass, idempotency, audit string, approvals ...actioncontract.ApprovalPolicy) actioncontract.ActionDefinition {
 	method, path, _ := strings.Cut(pattern, " ")
 	separator := strings.LastIndex(key, ".")
+	resourceKey, operationKey := key[:separator], key[separator+1:]
+	localized := schedulerPermissionText(capabilityKey, resourceKey, operationKey)
+	englishLabel := localized["en"].Label
 	risk := actioncontract.RiskMedium
 	if effect == actioncontract.EffectRead {
 		risk = actioncontract.RiskLow
@@ -140,11 +143,43 @@ func schedulerRoute(key, capabilityKey, capabilityLabel, pattern string, effect 
 	}
 	return actioncontract.ActionDefinition{
 		Key: key, Owner: SchedulerAuthorizationOwner, SourceKind: "service_protocol", CapabilityKey: capabilityKey, CapabilityLabel: capabilityLabel,
-		OperationKey: key[separator+1:], OperationLabel: key, Label: key, Exposures: exposures,
+		OperationKey: operationKey, OperationLabel: englishLabel, Label: englishLabel, Exposures: exposures,
 		Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated},
 		HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path},
-		Permission:    &actioncontract.PermissionDefinition{Key: key, Owner: SchedulerAuthorizationOwner, ResourceKey: key[:separator], OperationKey: key[separator+1:], Label: key, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive},
-		EffectClass:   effect, RiskLevel: risk, ApprovalPolicies: append([]actioncontract.ApprovalPolicy(nil), approvals...),
+		Permission: &actioncontract.PermissionDefinition{
+			Key: key, Owner: SchedulerAuthorizationOwner, ModuleKey: "scheduler", GroupKey: capabilityKey,
+			ResourceKey: resourceKey, OperationKey: operationKey, Label: englishLabel, Category: capabilityLabel,
+			GrantMode: actioncontract.PermissionGrantInternal, ScopeKind: actioncontract.PermissionScopeNone,
+			DefaultLocale: "en", I18n: localized, LifecycleStatus: actioncontract.LifecycleActive,
+		},
+		EffectClass: effect, RiskLevel: risk, ApprovalPolicies: append([]actioncontract.ApprovalPolicy(nil), approvals...),
 		IdempotencyDecision: idempotency, AuditClass: audit, LifecycleStatus: actioncontract.LifecycleActive,
+	}
+}
+
+func schedulerPermissionText(capabilityKey, resourceKey, operationKey string) actioncontract.PermissionLocalizedText {
+	groupEnglish := map[string]string{CapabilitySchedulerAuthoring: "Scheduler authoring", CapabilitySchedulerOperations: "Scheduler operations"}[capabilityKey]
+	groupChinese := map[string]string{CapabilitySchedulerAuthoring: "调度配置", CapabilitySchedulerOperations: "调度运维"}[capabilityKey]
+	resourceEnglish := map[string]string{
+		"scheduler.definitions": "Scheduler definitions", "scheduler.authoring_contract": "Authoring contract",
+		"scheduler.schedules": "Schedules", "scheduler.state": "Scheduler state", "scheduler.runs": "Scheduler runs",
+		"scheduler.dead_letters": "Failed jobs",
+	}[resourceKey]
+	resourceChinese := map[string]string{
+		"scheduler.definitions": "调度定义", "scheduler.authoring_contract": "配置契约",
+		"scheduler.schedules": "调度计划", "scheduler.state": "调度状态", "scheduler.runs": "执行记录",
+		"scheduler.dead_letters": "失败任务",
+	}[resourceKey]
+	operationEnglish := map[string]string{
+		"list": "List", "get": "View", "validate": "Validate", "preview": "Preview", "simulate": "Simulate",
+		"run": "Run now", "reschedule": "Reschedule", "retry": "Retry", "cancel": "Cancel", "resolve": "Resolve", "requeue": "Requeue",
+	}[operationKey]
+	operationChinese := map[string]string{
+		"list": "查看列表", "get": "查看", "validate": "校验", "preview": "预览", "simulate": "模拟",
+		"run": "立即运行", "reschedule": "重新排期", "retry": "重试", "cancel": "取消", "resolve": "标记已处理", "requeue": "重新入队",
+	}[operationKey]
+	return actioncontract.PermissionLocalizedText{
+		"en":    {ModuleLabel: "Scheduler", GroupLabel: groupEnglish, ResourceLabel: resourceEnglish, OperationLabel: operationEnglish, Label: resourceEnglish + " · " + operationEnglish, Description: "Provides access to " + resourceEnglish + " for the “" + operationEnglish + "” operation."},
+		"zh-CN": {ModuleLabel: "调度", GroupLabel: groupChinese, ResourceLabel: resourceChinese, OperationLabel: operationChinese, Label: resourceChinese + " · " + operationChinese, Description: "允许对“" + resourceChinese + "”执行“" + operationChinese + "”操作。"},
 	}
 }
